@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>RC Lap Timer Receiver</title>
+  <style>
+    body {
+      margin: 0;
+      background: #121212;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: block;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1f1f1f;
+      padding: 15px;
+      border-bottom: 1px solid #333;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      font-weight: bold;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-connect {
+      background: #007bff;
+      color: white;
+    }
+
+    .btn-disconnect {
+      background: #444;
+      color: white;
+    }
+
+    .btn-copy {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-clear {
+      background: #dc3545;
+      color: white;
+    }
+
+    #camera-container {
+      margin: 10px;
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    video {
+      width: 100%;
+      max-height: 240px;
+      object-fit: cover;
+      background: #222;
+    }
+
+    .btn-camera {
+      background: #f39c12;
+      color: white;
+    }
+
+    #shutter-flash {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.1s;
+    }
+
+    .lap-box {
+      background: #000;
+      text-align: center;
+      padding: 15px;
+      margin: 10px;
+      border-radius: 10px;
+    }
+
+    .stats-container {
+      display: flex;
+      gap: 10px;
+      margin: 10px;
+    }
+
+    .stats-container .lap-box {
+      flex: 1;
+      margin: 0;
+      padding: 10px;
+    }
+
+    #best-lap-display {
+      border: 2px solid #00e1ff;
+    }
+
+    #current-lap-display {
+      border: 2px solid #ffff00;
+    }
+
+    .stats-box {
+      border: 1px solid #888;
+    }
+
+    .label {
+      font-size: 14px;
+      color: #00e1ff;
+      margin-bottom: 5px;
+    }
+
+    #current-lap-display .label {
+      color: #ffff00;
+    }
+
+    .stats-box .label {
+      color: #ccc;
+    }
+
+    .time {
+      font-size: 48px;
+      font-family: monospace;
+      font-weight: bold;
+    }
+
+    .time-sub {
+      font-size: 28px;
+      font-family: monospace;
+      font-weight: bold;
+    }
+
+    /* 写真履歴のスタイル（追加） */
+    #photo-history {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      /* 半分サイズで横に2枚並べる */
+      gap: 10px;
+      margin: 10px;
+    }
+
+    .captured-img {
+      width: 100%;
+      border-radius: 5px;
+      border: 1px solid #444;
+      display: block;
+    }
+
+    #table-container {
+      margin: 10px;
+      background: #1f1f1f;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      background: #333;
+      padding: 10px;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #333;
+      font-family: monospace;
+      font-size: 18px;
+    }
+
+    tr:nth-child(1) td {
+      color: #ffff00;
+    }
+
+    footer {
+      padding: 20px 15px;
+      background: #111;
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+    }
+
+    #status {
+      color: #00e1ff;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="btn-group">
+      <button class="btn-connect" onclick="connectBLE()">CONNECT</button>
+      <button class="btn-disconnect" onclick="disconnectBLE()">DISCONNECT</button>
+    </div>
+    <div class="btn-group">
+      <button id="camera-btn" class="btn-camera" onclick="toggleCamera()">START CAMERA</button>
+      <button class="btn-copy" onclick="copyLaps()">COPY</button>
+      <button class="btn-clear" onclick="clearData()">CLEAR</button>
+    </div>
+  </header>
+
+  <div id="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <div id="shutter-flash"></div>
+  </div>
+
+  <div id="best-lap-display" class="lap-box">
+    <div class="label">BEST LAP</div>
+    <div id="best-time" class="time">--:--.--</div>
+  </div>
+
+  <div id="current-lap-display" class="lap-box">
+    <div class="label">CURRENT LAP</div>
+    <div id="current-time" class="time">--:--.--</div>
+  </div>
+
+  <div class="stats-container">
+    <div class="lap-box stats-box">
+      <div class="label">LAPS</div>
+      <div id="lap-count" class="time-sub">0</div>
+    </div>
+    <div class="lap-box stats-box">
+      <div class="label">AVERAGE</div>
+      <div id="avg-time" class="time-sub">--:--.--</div>
+    </div>
+  </div>
+
+  <div id="photo-history"></div>
+
+  <div id="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>No.</th>
+          <th>LAP TIME</th>
+        </tr>
+      </thead>
+      <tbody id="lap-list">
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    STATUS: <span id="status">READY</span>
+  </footer>
+
+  <script src="laptimer.js"></script>
+</body>
+
+</html>
