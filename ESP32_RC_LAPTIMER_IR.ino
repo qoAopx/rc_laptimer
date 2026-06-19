@@ -16,12 +16,13 @@
  * ==============================================================================
  */
 
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
 #include <BLE2902.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+
 #include "esp_timer.h"  // esp_timer_get_time() 用
 
 // --- BLE設定 ---
@@ -222,7 +223,7 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(19, 0);
     lcd.print(isTriggered ? F("^") : F("_"));
     lcd.setCursor(18, 3);
-    lcd.print(oldDeviceConnected ? F("B+") : F("B-"));
+    lcd.print(deviceConnected ? F("B+") : F("B-"));
 
     lcd.setCursor(0, 1);
     lcd.print(F("SENSOR TH: "));
@@ -242,11 +243,11 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(0, 0);
     lcd.print(F("--- RC LAP TIMER ---"));
     lcd.setCursor(0, 1);
-    lcd.print(F("PASS THE PHOTO SENSOR"));
+    lcd.print(F("   LAP TIMER READY  "));
     lcd.setCursor(0, 2);
-    lcd.print(F("TO START"));
+    lcd.print(F("    PASS SENSOR     "));
     lcd.setCursor(0, 3);
-    lcd.print(F("THE MEASUREMENT."));
+    lcd.print(F("      TO START      "));
 
   } else {
     // 計測中：現在の経過時間をリアルタイム表示
@@ -271,7 +272,7 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(19, 0);
     lcd.print(isTriggered ? F("^") : F("_"));
     lcd.setCursor(18, 3);
-    lcd.print(oldDeviceConnected ? F("B+") : F("B-"));
+    lcd.print(deviceConnected ? F("B+") : F("B-"));
   }
 }
 
@@ -284,9 +285,9 @@ void BLESetup() {
   pServer->setCallbacks(&bleCallbacks);  // staticインスタンスを使用
 
   BLEService* pService = pServer->createService(SERVICE_UUID);
-  pCharacteristic = pService->createCharacteristic(
-    CHAR_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_INDICATE);
+  pCharacteristic =
+      pService->createCharacteristic(CHAR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY |
+                                                    BLECharacteristic::PROPERTY_INDICATE);
   pCharacteristic->addDescriptor(new BLE2902());
   pService->start();
 
@@ -336,7 +337,6 @@ void setup() {
 // Loop
 // ============================================================
 void loop() {
-
   // ----------------------------------------------------------
   // 1. スイッチデバウンス更新
   // ----------------------------------------------------------
@@ -439,8 +439,7 @@ void loop() {
   // 5. デッドタイム終了 → Ready状態へ復帰
   // ----------------------------------------------------------
   if (!isTriggered) {
-    unsigned long elapsedSinceLapMs =
-      (unsigned long)((esp_timer_get_time() - lastLapTimeUs) / 1000LL);
+    unsigned long elapsedSinceLapMs = (unsigned long)((esp_timer_get_time() - lastLapTimeUs) / 1000LL);
 
     if (elapsedSinceLapMs >= deadTimeMs) {
       isTriggered = true;
