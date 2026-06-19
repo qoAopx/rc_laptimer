@@ -107,6 +107,7 @@ SENSOR   : CLEAR
 | 送信フォーマット | `Lap: 12.34`（秒単位） |
 
 BLE スキャナアプリ（例：nRF Connect）で `RC_LAPTIMER` に接続すると、ラップ確定ごとに通知を受け取れます。
+WEBクライアントもPagesで公開しています。(https://qoaopx.github.io/rc_laptimer/)
 
 ---
 
