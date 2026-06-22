@@ -16,6 +16,23 @@
  * ==============================================================================
  */
 
+ /*
+Connected to ESP32 on /dev/cu.usbserial-240:
+Chip type:          ESP32-D0WD-V3 (revision v3.1)
+Features:           Wi-Fi, BT, Dual Core + LP Core, 240MHz, Vref calibration in eFuse, Coding Scheme None
+Crystal frequency:  40MHz
+MAC:                70:4b:ca:30:e6:70
+*/
+// @arduino-config Board: esp32:esp32:esp32
+// @arduino-config Port: /dev/cu.usbserial-240
+// @arduino-config CPUFrequency: 240
+// @arduino-config FlashFrequency: 80
+// @arduino-config FlashMode: qio
+// @arduino-config FlashSize: 4M
+// @arduino-config PartitionScheme: huge_app
+// @arduino-config UploadSpeed: 460800
+// @arduino-config EraseFlash: all
+
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -281,6 +298,14 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
 // ============================================================
 void BLESetup() {
   BLEDevice::init(BLE_NAME);
+
+  // ★ BLE送信出力を最大（+9dBm）に設定
+  // ESP_PWR_LVL_N12 〜 ESP_PWR_LVL_P9 の範囲で指定可能
+  // P9 = +9dBm（最大）、デフォルトは P3 = +3dBm
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_DEFAULT);
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);     // ★ アドバタイズ出力も最大化
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_SCAN);    // ★ スキャン出力も最大化
+
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(&bleCallbacks);  // staticインスタンスを使用
 
