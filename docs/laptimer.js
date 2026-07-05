@@ -258,11 +258,13 @@ function updateTable() {
 
   // 最新のラップタイム（配列の先頭）から順にテーブル行を追加
   lapTimes.forEach((time, index) => {
-    const row = tbody.insertRow();
-    // 行番号（新しいものほど大きい数値になる）
-    row.insertCell(0).innerText = lapTimes.length - index;
-    // フォーマットされたラップタイム文字列
-    row.insertCell(1).innerText = formatTime(time);
+    if (lapTimes.length - index -1 != 0) {
+      const row = tbody.insertRow();
+      // 行番号（新しいものほど大きい数値になる）
+      row.insertCell(0).innerText = lapTimes.length - index;
+      // フォーマットされたラップタイム文字列
+      row.insertCell(1).innerText = formatTime(time);
+    }
   });
 }
 
