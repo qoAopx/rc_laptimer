@@ -73,6 +73,7 @@ BLEServer* pServer = NULL;
 BLECharacteristic* pCharacteristic = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
+volatile bool bleStateChanged = false;// ★ 追加：BLE状態変化通知フラグ
 
 // ボリューム設定値
 float sensingThreshMs = 0.0f;
@@ -111,10 +112,12 @@ unsigned long lastSwitchMs = 0;
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pSrv) override {
     deviceConnected = true;
+    bleStateChanged = true;  // ★ フラグを立てるだけ
     Serial.println(F("BLE Connected"));
   }
   void onDisconnect(BLEServer* pSrv) override {
     deviceConnected = false;
+    bleStateChanged = true;  // ★ フラグを立てるだけ
     Serial.println(F("BLE Disconnected"));
   }
 };
@@ -216,9 +219,17 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
   static bool lastSettingMode = !settingMode;
   static bool lastFirstRun = true;
 
+  // ★ BLE状態変化時はlcd.clear()で再描画してノイズをリセット
+  if (bleStateChanged) {
+    bleStateChanged = false;
+    lcd.clear();
+    lastSettingMode = !settingMode; // 強制再描画トリガー
+  }
+
   // モードが切り替わったときだけ画面をクリアして固定ラベルを再描画
   if (settingMode != lastSettingMode || isFirstRun != lastFirstRun) {
     lcd.clear();
+    delay(5);  // ★ clear完了を確実に待つ
     lastSettingMode = settingMode;
     lastFirstRun = isFirstRun;
     if (!settingMode && !isFirstRun) {
@@ -255,6 +266,8 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(0, 3);
     lcd.print(F("SENSOR   : "));
     lcd.print(digitalRead(PHOTO_PIN) == HIGH ? F("BLOCK") : F("CLEAR"));
+
+
 
   } else if (isFirstRun) {
     lcd.setCursor(0, 0);
