@@ -261,7 +261,7 @@ function updateTable() {
     if (lapTimes.length - index -1 != 0) {
       const row = tbody.insertRow();
       // 行番号（新しいものほど大きい数値になる）
-      row.insertCell(0).innerText = lapTimes.length - index;
+      row.insertCell(0).innerText = lapTimes.length - index -1;
       // フォーマットされたラップタイム文字列
       row.insertCell(1).innerText = formatTime(time);
     }
