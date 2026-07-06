@@ -1,2 +1,5 @@
 .DS_Store
-
+.clangd
+.vscode
+.cache
+compile_commands.json
