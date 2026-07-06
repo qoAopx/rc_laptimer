@@ -177,7 +177,7 @@ async function toggleCamera() {
 /**
  * 現在のカメラ映像をキャプチャし、ラップ情報付きの画像を生成・保存・表示する関数
  * @param {number} lapNum - 記録されたラップ数
- * @param {string} lapTimeStr - ★ ESP32から受信したラップタイム文字列（DOMではなく引数で受け取る）
+ * @param {string} lapTimeStr - ★ ESP32から受信したラップタイム文字列
  */
 function takePhoto(lapNum, lapTimeStr) {
   if (!stream) return;
@@ -192,7 +192,7 @@ function takePhoto(lapNum, lapTimeStr) {
 
   context.font = "bold 40px monospace";
   context.fillStyle = "yellow";
-  // ★ DOMのcurrent-timeではなくESP32から受信したラップタイムを直接使用
+  // ★ DOMのcurrent-timeでなくESP32受信値をそのまま印字（lap-listと同一の値）
   context.fillText(`LAP ${lapNum}: ${lapTimeStr}`, 30, canvas.height - 30);
 
   const dataUrl = canvas.toDataURL("image/png");
@@ -252,7 +252,7 @@ function addLap(time, receiveTime) {
       bestLap = time;
       document.getElementById("best-time").innerText = formatTime(bestLap);
     }
-    takePhoto(lapTimes.length - 1, formatTime(time)); // ★ ESP32のラップタイムを文字列化して渡す
+    takePhoto(lapTimes.length - 1, formatTime(time)); // ★ ESP32のラップタイムをそのまま渡す
     // ★ BLE受信時刻を起点に次のラップのストップウォッチをリセット
     resetStopwatch(receiveTime);
   }
