@@ -42,7 +42,57 @@ const canvas = document.getElementById('canvas');
 const flash = document.getElementById('shutter-flash');
 
 // ==========================================
-// BLE通信制御ロジック
+// ★ ストップウォッチ関連の変数
+// ==========================================
+
+/** @type {number|null} ストップウォッチの開始時刻（performance.now()基準） */
+let lapStartTime = null;
+/** @type {number|null} requestAnimationFrameのID */
+let rafId = null;
+
+/**
+ * ★ ストップウォッチの表示をリアルタイム更新するループ
+ */
+function tickStopwatch() {
+  if (lapStartTime === null) return;
+  const elapsed = (performance.now() - lapStartTime) / 1000;
+  document.getElementById("current-time").innerText = formatTime(elapsed);
+  rafId = requestAnimationFrame(tickStopwatch);
+}
+
+/**
+ * ★ ストップウォッチをリセットして0からカウント開始
+ * @param {number} anchorTime - performance.now()基準の開始時刻
+ */
+function resetStopwatch(anchorTime) {
+  if (rafId !== null) cancelAnimationFrame(rafId);
+  lapStartTime = anchorTime;
+  rafId = requestAnimationFrame(tickStopwatch);
+}
+
+// ==========================================
+// ★ BLE接続状態による背景色制御
+// ==========================================
+
+/**
+ * ★ body要素のクラスでBLE接続状態を背景色に反映する
+ * @param {'disconnected'|'connected'|'lap'} state
+ */
+function setBLEState(state) {
+  const body = document.body;
+  body.classList.remove('ble-connected', 'ble-lap');
+  if (state === 'connected') {
+    body.classList.add('ble-connected');
+  } else if (state === 'lap') {
+    // 一度クラスを外して再付与することでアニメーションをリトリガーする
+    void body.offsetWidth;
+    body.classList.add('ble-connected', 'ble-lap');
+  }
+  // 'disconnected' は何もクラスを付けない（CSSデフォルトの濃いグレー）
+}
+
+// ==========================================
+// BLE通信制御ロジック（変更なし）
 // ==========================================
 
 /**
@@ -52,28 +102,22 @@ async function connectBLE() {
   const status = document.getElementById("status");
   try {
     status.innerText = "SELECTING...";
-    // 指定したサービスUUIDを持つデバイスを検索し、ユーザーに選択を促す
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
     });
 
-    // デバイスの切断イベントを購読
     device.addEventListener("gattserverdisconnected", onDisconnected);
     status.innerText = "CONNECTING...";
 
-    // GATTサーバーへの接続
     const server = await device.gatt.connect();
-    // プライマリサービスの取得
     const service = await server.getPrimaryService(SERVICE_UUID);
-    // データ送受信用キャラクタリスティックの取得
     characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-    // デバイスからの通知（Notifications）の受信を開始する
     await characteristic.startNotifications();
-    // キャラクタリスティックの値が更新された（データを受信した）際のイベントリスナーを登録
     characteristic.addEventListener("characteristicvaluechanged", handleNotify);
 
     status.innerText = "CONNECTED";
+    setBLEState('connected'); // ★ 接続時：背景を黒に
   } catch (e) {
     status.innerText = "ERROR: " + e.message;
   }
@@ -84,6 +128,12 @@ async function connectBLE() {
  */
 function onDisconnected() {
   document.getElementById("status").innerText = "DISCONNECTED";
+  setBLEState('disconnected'); // ★ 切断時：背景を濃いグレーに
+  // ★ ストップウォッチを停止
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
 }
 
 /**
@@ -94,7 +144,7 @@ function disconnectBLE() {
 }
 
 // ==========================================
-// カメラ制御・撮影ロジック
+// カメラ制御・撮影ロジック（変更なし）
 // ==========================================
 
 /**
@@ -103,28 +153,22 @@ function disconnectBLE() {
 async function toggleCamera() {
   const btn = document.getElementById('camera-btn');
   if (!stream) {
-    // ストリームが存在しない場合はカメラを起動
     try {
-      // 背面カメラ（environment）の映像のみを要求
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false
       });
       video.srcObject = stream;
-      // iOSにおけるvideo要素の自動再生制限を回避するため、明示的にplay()を呼び出す
       video.play();
-      // UIの更新（停止ボタンへ変更）
       btn.innerText = "STOP CAMERA";
       btn.style.background = "#555";
     } catch (err) {
       alert("カメラの起動に失敗しました: " + err);
     }
   } else {
-    // ストリームが存在する場合はカメラを停止
     stream.getTracks().forEach(track => track.stop());
     stream = null;
     video.srcObject = null;
-    // UIの更新（起動ボタンへ変更）
     btn.innerText = "START CAMERA";
     btn.style.background = "#f39c12";
   }
@@ -135,37 +179,29 @@ async function toggleCamera() {
  * @param {number} lapNum - 記録されたラップ数
  */
 function takePhoto(lapNum) {
-  // カメラが起動していなければ何もしない
   if (!stream) return;
 
-  // 画面を一瞬白くするフラッシュ演出（opacityを1にしてから100ms後に0へ戻す）
   flash.style.opacity = 1;
   setTimeout(() => flash.style.opacity = 0, 100);
 
-  // canvasに現在のvideo要素のフレームを描画
   const context = canvas.getContext('2d');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // 撮影画像に「LAP X: 00:00.00」というタイムスタンプを印字
   context.font = "bold 40px monospace";
   context.fillStyle = "yellow";
   const currentTimeStr = document.getElementById("current-time").innerText;
   context.fillText(`LAP ${lapNum}: ${currentTimeStr}`, 30, canvas.height - 30);
 
-  // canvasの内容をPNG画像のデータURLに変換
   const dataUrl = canvas.toDataURL("image/png");
 
-  // --- 画面下の写真履歴UIへ画像を追加 ---
   const historyContainer = document.getElementById('photo-history');
   const img = document.createElement('img');
   img.src = dataUrl;
   img.className = 'captured-img';
-  // 新しい画像を履歴リストの最上部（先頭）に挿入
   historyContainer.insertBefore(img, historyContainer.firstChild);
 
-  // --- 撮影画像を端末にダウンロード（既存ロジック維持） ---
   const link = document.createElement('a');
   link.download = `lap_${lapNum}_${new Date().getTime()}.png`;
   link.href = dataUrl;
@@ -181,13 +217,13 @@ function takePhoto(lapNum) {
  * @param {Event} event - characteristicvaluechanged イベントオブジェクト
  */
 function handleNotify(event) {
-  // 受信したバイナリデータを文字列（UTF-8）にデコード
+  // ★ BLE受信の瞬間のタイムスタンプを記録（ストップウォッチのアンカーに使用）
+  const receiveTime = performance.now();
   const val = new TextDecoder().decode(event.target.value);
-  // 文字列から "Lap: 12.345" のようなパターンを抽出し、数値部分を取り出す
   const match = val.match(/Lap:\s*([\d.]+)/);
   if (match) {
     const lapTime = parseFloat(match[1]);
-    addLap(lapTime);
+    addLap(lapTime, receiveTime);
   }
 }
 
@@ -198,26 +234,28 @@ function handleNotify(event) {
 /**
  * 受信した新しいラップタイムをアプリケーションに登録し、画面を更新する関数
  * @param {number} time - 計測されたラップタイム（秒）
+ * @param {number} receiveTime - BLE受信時刻（performance.now()基準）
  */
-function addLap(time) {
-  // 配列の先頭に新しいラップタイムを追加
+function addLap(time, receiveTime) {
   lapTimes.unshift(time);
-  // 画面上の「現在のラップタイム」表示を更新
-  document.getElementById("current-time").innerText = formatTime(time);
 
-  // 1番目のデータはスタート時の通過（ラップではない）とみなし、2番目以降を有効ラップとして処理する
-  if (lapTimes.length > 1) {
-    // ベストラップの判定と更新
+  // ★ ラップ通過時の背景を赤黒点滅させる
+  setBLEState('lap');
+
+  if (lapTimes.length === 1) {
+    // ★ 初回通過（スタート検出）：BLE受信時刻を起点にストップウォッチ開始
+    resetStopwatch(receiveTime);
+  } else {
+    // ★ 2周目以降：ラップ確定
     if (time < bestLap) {
       bestLap = time;
       document.getElementById("best-time").innerText = formatTime(bestLap);
     }
-    // 有効なラップ（No.2以降）が記録されたタイミングで自動撮影を実行
-    // （配列の長さが2のとき、lapTimes.length - 1 は 1 となり「Lap 1」として扱われる）
     takePhoto(lapTimes.length - 1);
+    // ★ BLE受信時刻を起点に次のラップのストップウォッチをリセット
+    resetStopwatch(receiveTime);
   }
 
-  // 統計情報とラップ一覧テーブルを更新
   updateStats();
   updateTable();
 }
@@ -230,14 +268,11 @@ function updateStats() {
   const lapCountElem = document.getElementById("lap-count");
   const avgTimeElem = document.getElementById("avg-time");
 
-  // 表示上のラップ数はデータ総数から1（スタート時）を引いた値（0未満にはしない）
   const displayLaps = Math.max(0, dataCount - 1);
   if (lapCountElem) lapCountElem.innerText = displayLaps;
 
   if (avgTimeElem) {
-    // 有効なラップが存在する場合のみ平均を計算
     if (dataCount > 1) {
-      // 直近のラップデータを1つ除外して平均を算出する（既存ロジックの維持）
       const lapsToAverage = lapTimes.slice(0, -1);
       const sum = lapsToAverage.reduce((a, b) => a + b, 0);
       const avg = sum / lapsToAverage.length;
@@ -253,16 +288,12 @@ function updateStats() {
  */
 function updateTable() {
   const tbody = document.getElementById("lap-list");
-  // テーブルの中身を一度リセット
   tbody.innerHTML = "";
 
-  // 最新のラップタイム（配列の先頭）から順にテーブル行を追加
   lapTimes.forEach((time, index) => {
-    if (lapTimes.length - index -1 != 0) {
+    if (lapTimes.length - index - 1 != 0) {
       const row = tbody.insertRow();
-      // 行番号（新しいものほど大きい数値になる）
-      row.insertCell(0).innerText = lapTimes.length - index -1;
-      // フォーマットされたラップタイム文字列
+      row.insertCell(0).innerText = lapTimes.length - index - 1;
       row.insertCell(1).innerText = formatTime(time);
     }
   });
@@ -276,9 +307,7 @@ function updateTable() {
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
-  // 小数点第2位まで（センチ秒）を抽出
   const cs = Math.floor((sec * 100) % 100);
-  // padStartを使用して常に2桁になるように0埋めを行う
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
 }
 
@@ -295,16 +324,13 @@ function copyLaps() {
     return;
   }
 
-  // 配列を反転させ、古いラップから順にテキスト化する
   const text = lapTimes.slice().reverse().map((t, i) => `Lap ${i + 1}: ${formatTime(t)}`).join("\n");
 
-  // Clipboard API が利用可能かつセキュアコンテキストであるかを確認
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text)
       .then(() => alert("コピーしました"))
-      .catch(err => fallbackCopyTextToClipboard(text)); // 失敗時はフォールバックを実行
+      .catch(err => fallbackCopyTextToClipboard(text));
   } else {
-    // 古いブラウザや非SSL環境用のフォールバック
     fallbackCopyTextToClipboard(text);
   }
 }
@@ -314,7 +340,6 @@ function copyLaps() {
  * @param {string} text - コピーする文字列
  */
 function fallbackCopyTextToClipboard(text) {
-  // 画面外に非表示のtextarea要素を作成し、そこにテキストを流し込んでから選択・コピーコマンドを発行する
   const textArea = document.createElement("textarea");
   textArea.value = text;
   document.body.appendChild(textArea);
@@ -328,22 +353,25 @@ function fallbackCopyTextToClipboard(text) {
  * メモリ上のすべての計測データと、画面上の表示履歴を初期状態にリセットする関数
  */
 function clearData() {
-  // ユーザーに実行確認を求める
   if (confirm("データをすべて消去しますか？")) {
-    // 変数の初期化
     lapTimes = [];
     bestLap = Infinity;
 
-    // UI表示の初期化
+    // ★ ストップウォッチ停止・リセット
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    lapStartTime = null;
+
     document.getElementById("best-time").innerText = "--:--.--";
-    document.getElementById("current-time").innerText = "--:--.--";
+    document.getElementById("current-time").innerText = "00:00.00";
 
     const lapCountElem = document.getElementById("lap-count");
     const avgTimeElem = document.getElementById("avg-time");
     if (lapCountElem) lapCountElem.innerText = "0";
     if (avgTimeElem) avgTimeElem.innerText = "--:--.--";
 
-    // テーブルと写真履歴のDOM要素を空にする
     document.getElementById("lap-list").innerHTML = "";
     document.getElementById('photo-history').innerHTML = "";
   }
