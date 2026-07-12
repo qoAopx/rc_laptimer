@@ -16,12 +16,10 @@
  * ==============================================================================
  */
 
- /*
-Connected to ESP32 on /dev/cu.usbserial-240:
+/*
 Chip type:          ESP32-D0WD-V3 (revision v3.1)
 Features:           Wi-Fi, BT, Dual Core + LP Core, 240MHz, Vref calibration in eFuse, Coding Scheme None
 Crystal frequency:  40MHz
-MAC:                70:4b:ca:30:e6:70
 */
 // @arduino-config Board: esp32:esp32:esp32
 // @arduino-config Port: /dev/cu.usbserial-240
@@ -65,15 +63,15 @@ const int LED_ON_MS = 50;                          // LED点灯時間
 const int LED_OFF_MS = 100;                        // LED消灯時間
 const int SETUP_FLASH_COUNT = 2;                   // 起動時LEDフラッシュ回数
 const int SWITCH_DEBOUNCE_MS = 50;                 // スライドスイッチデバウンス時間
-const float BEST_TIME_INIT_MS = 99999000.0f;       // ベストタイム初期値(ms)
+const unsigned long BEST_TIME_INIT_MS = 99999000UL;  // ベストタイム初期値(ms)
 
 // --- グローバル変数 ---
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 BLEServer* pServer = NULL;
 BLECharacteristic* pCharacteristic = NULL;
-bool deviceConnected = false;
-bool oldDeviceConnected = false;
-volatile bool bleStateChanged = false;// ★ 追加：BLE状態変化通知フラグ
+volatile bool deviceConnected = false;
+volatile bool oldDeviceConnected = false;
+volatile bool bleStateChanged = false;  // ★ 追加：BLE状態変化通知フラグ
 
 // ボリューム設定値
 float sensingThreshMs = 0.0f;
@@ -85,8 +83,8 @@ unsigned long deadTimeMs = MIN_DEAD_TIME_MS;
 volatile bool isSensorTriggered = false;
 volatile int64_t isrTriggerTimeUs = 0;  // μs単位（esp_timer_get_time()）
 
-bool isSensing = false;       // ISRが発火してからセンサー確定待ち中フラグ
-int64_t sensorTriggerUs = 0;  // 確定したトリガー時刻(μs)
+volatile bool isSensing = false;  // ISRが発火してからセンサー確定待ち中フラグ
+int64_t sensorTriggerUs = 0;      // 確定したトリガー時刻(μs)
 
 // ラップタイム管理（ms単位で保持して精度損失を防ぐ）
 int64_t lastLapTimeUs = 0;  // lastLapTimeをμs単位で保持
@@ -184,8 +182,9 @@ void updateLED() {
 // 時刻フォーマット（snprintfでバッファサイズを明示）
 // ============================================================
 void formatTime(unsigned long time_ms, char* outBuf, size_t bufSize) {
+  const unsigned long MAX_TIME_MS = 59UL * 60UL * 1000UL;  // ★ 59分59.99秒以上は異常値扱い
   // 0または異常値は "00:00.00" で表示
-  if (time_ms == 0 || time_ms >= 3540000UL) {
+  if (time_ms == 0 || time_ms >= MAX_TIME_MS) {
     snprintf(outBuf, bufSize, "00:00.00     ");
     return;
   }
@@ -219,17 +218,16 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
   static bool lastSettingMode = !settingMode;
   static bool lastFirstRun = true;
 
-  // ★ BLE状態変化時はlcd.clear()で再描画してノイズをリセット
+  // ★ BLE状態変化時は clear() せず、下のif文を強制発火させるだけにする
+  //    （clear()は下のブロックで1回だけ行う。二重呼び出し防止）
   if (bleStateChanged) {
     bleStateChanged = false;
-    lcd.clear();
-    lastSettingMode = !settingMode; // 強制再描画トリガー
+    lastSettingMode = !settingMode;  // 強制再描画トリガー
   }
 
   // モードが切り替わったときだけ画面をクリアして固定ラベルを再描画
   if (settingMode != lastSettingMode || isFirstRun != lastFirstRun) {
     lcd.clear();
-    delay(5);  // ★ clear完了を確実に待つ
     lastSettingMode = settingMode;
     lastFirstRun = isFirstRun;
     if (!settingMode && !isFirstRun) {
@@ -242,6 +240,8 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
       lcd.setCursor(0, 3);
       lcd.print(F("PREV :"));
     }
+    // ★ delay()を使わず、clear()直後の描画は次のloop()周期（最大250ms後）に任せる
+    return;
   }
 
   if (settingMode) {
@@ -266,8 +266,6 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(0, 3);
     lcd.print(F("SENSOR   : "));
     lcd.print(digitalRead(PHOTO_PIN) == HIGH ? F("BLOCK") : F("CLEAR"));
-
-
 
   } else if (isFirstRun) {
     lcd.setCursor(0, 0);
@@ -316,8 +314,8 @@ void BLESetup() {
   // ESP_PWR_LVL_N12 〜 ESP_PWR_LVL_P9 の範囲で指定可能
   // P9 = +9dBm（最大）、デフォルトは P3 = +3dBm
   BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_DEFAULT);
-  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);     // ★ アドバタイズ出力も最大化
-  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_SCAN);    // ★ スキャン出力も最大化
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);   // ★ アドバタイズ出力も最大化
+  BLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_SCAN);  // ★ スキャン出力も最大化
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(&bleCallbacks);  // staticインスタンスを使用

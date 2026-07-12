@@ -2,4 +2,3 @@
 .clangd
 .vscode
 .cache
-compile_commands.json
