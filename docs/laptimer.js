@@ -195,6 +195,18 @@ function takePhoto(lapNum, lapTimeStr) {
   // ★ DOMのcurrent-timeでなくESP32受信値をそのまま印字（lap-listと同一の値）
   context.fillText(`LAP ${lapNum}: ${lapTimeStr}`, 30, canvas.height - 30);
 
+  const now = new Date();
+  const formatted = now.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  context.fillText(formatted, 30, 40);
+
+
   const dataUrl = canvas.toDataURL("image/jpeg");
 
   const historyContainer = document.getElementById('photo-history');
@@ -204,7 +216,7 @@ function takePhoto(lapNum, lapTimeStr) {
   historyContainer.insertBefore(img, historyContainer.firstChild);
 
   const link = document.createElement('a');
-  link.download = `lap_${lapNum}_${new Date().getTime()}.png`;
+  link.download = `lap_${lapNum}_${new Date().getTime()}.jpeg`;
   link.href = dataUrl;
   link.click();
 }
@@ -290,10 +302,12 @@ function updateStats() {
 function updateTable() {
   const tbody = document.getElementById("lap-list");
   tbody.innerHTML = "";
-
   lapTimes.forEach((time, index) => {
     if (lapTimes.length - index - 1 != 0) {
       const row = tbody.insertRow();
+      if (time === bestLap) {
+        row.style = "background-color:#28a745;";
+      }
       row.insertCell(0).innerText = lapTimes.length - index - 1;
       row.insertCell(1).innerText = formatTime(time);
     }
