@@ -42,6 +42,81 @@ const canvas = document.getElementById('canvas');
 const flash = document.getElementById('shutter-flash');
 
 // ==========================================
+// ★ スリープ防止（Wake Lock API）
+// ==========================================
+
+/** @type {WakeLockSentinel|null} スリープ防止のWakeLockインスタンス */
+let wakeLock = null;
+
+/**
+ * ★ スリープ防止を開始する
+ */
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      // タブ復帰時に再取得（バックグラウンドに行くと自動解放されるため）
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && wakeLock === null) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      });
+    } catch (e) {
+      console.warn('Wake Lock取得失敗:', e);
+    }
+  }
+}
+
+// ページ読み込み時にスリープ防止を開始
+requestWakeLock();
+
+// ==========================================
+// ★ ビープ音（Web Audio API）
+// ==========================================
+
+/** @type {AudioContext|null} */
+let audioCtx = null;
+
+/**
+ * ★ ビープ音を鳴らす
+ * @param {number} freq - 周波数 Hz（デフォルト880Hz）
+ * @param {number} duration - 長さ ms（デフォルト150ms）
+ */
+function beep(freq = 880, duration = 150) {
+  // AudioContextはユーザー操作後でないと生成できないため遅延初期化
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000);
+  osc.start(audioCtx.currentTime);
+  osc.stop(audioCtx.currentTime + duration / 1000);
+}
+
+// ==========================================
+// ★ CONNECTボタンのステータスアイコン更新
+// ==========================================
+
+/**
+ * ★ CONNECTボタンの表示を接続状態に応じて更新する
+ * @param {'disconnected'|'connecting'|'connected'} state
+ */
+function setConnectBtnState(state) {
+  const btn = document.getElementById('connect-btn');
+  if (!btn) return;
+  const labels = {
+    disconnected: '🔴 CONNECT',
+    connecting:   '🟡 CONNECT',
+    connected:    '🟢 CONNECT',
+  };
+  btn.innerText = labels[state] ?? '🔴 CONNECT';
+}
+
+// ==========================================
 // ★ ストップウォッチ関連の変数
 // ==========================================
 
@@ -102,12 +177,14 @@ async function connectBLE() {
   const status = document.getElementById("status");
   try {
     status.innerText = "SELECTING...";
+    setConnectBtnState('connecting'); // ★
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
     });
 
     device.addEventListener("gattserverdisconnected", onDisconnected);
     status.innerText = "CONNECTING...";
+    setConnectBtnState('connecting'); // ★
 
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
@@ -117,9 +194,11 @@ async function connectBLE() {
     characteristic.addEventListener("characteristicvaluechanged", handleNotify);
 
     status.innerText = "CONNECTED";
-    setBLEState('connected'); // ★ 接続時：背景を黒に
+    setBLEState('connected');       // ★ 接続時：背景を黒に
+    setConnectBtnState('connected'); // ★
   } catch (e) {
     status.innerText = "ERROR: " + e.message;
+    setConnectBtnState('disconnected'); // ★ エラー時も未接続アイコンに戻す
   }
 }
 
@@ -128,7 +207,8 @@ async function connectBLE() {
  */
 function onDisconnected() {
   document.getElementById("status").innerText = "DISCONNECTED";
-  setBLEState('disconnected'); // ★ 切断時：背景を濃いグレーに
+  setBLEState('disconnected');        // ★ 切断時：背景を濃いグレーに
+  setConnectBtnState('disconnected'); // ★
   // ★ ストップウォッチを停止
   if (rafId !== null) {
     cancelAnimationFrame(rafId);
@@ -258,9 +338,13 @@ function addLap(time, receiveTime) {
   setBLEState('lap');
 
   if (lapTimes.length === 1) {
-    // ★ 初回通過（スタート検出）：BLE受信時刻を起点にストップウォッチ開始
+    // ★ 初回通過（スタート検出）：短いビープ1回
+    beep(660, 100);
     resetStopwatch(receiveTime);
   } else {
+    // ★ ラップ確定：高めのビープ2回
+    beep(880, 120);
+    setTimeout(() => beep(880, 120), 180);
     // ★ 2周目以降：ラップ確定
     if (time < bestLap) {
       bestLap = time;
