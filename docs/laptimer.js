@@ -204,6 +204,8 @@ function takePhoto(lapNum, lapTimeStr) {
     minute: '2-digit',
     second: '2-digit'
   });
+  context.font = "bold 24px monospace";
+  context.fillStyle = "yellow";
   context.fillText(formatted, 30, 40);
 
 
