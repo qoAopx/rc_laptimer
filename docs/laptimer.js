@@ -195,7 +195,7 @@ function takePhoto(lapNum, lapTimeStr) {
   // ★ DOMのcurrent-timeでなくESP32受信値をそのまま印字（lap-listと同一の値）
   context.fillText(`LAP ${lapNum}: ${lapTimeStr}`, 30, canvas.height - 30);
 
-  const dataUrl = canvas.toDataURL("image/png");
+  const dataUrl = canvas.toDataURL("image/jpeg");
 
   const historyContainer = document.getElementById('photo-history');
   const img = document.createElement('img');

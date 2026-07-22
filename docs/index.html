@@ -32,7 +32,7 @@
     }
 
     header {
-      padding: 15px;
+      padding: 10px 15px 0px 15px;
       border-bottom: 1px solid #333;
       position: sticky;
       top: 0;
@@ -88,8 +88,7 @@
 
     video {
       width: 100%;
-      max-height: 240px;
-      object-fit: cover;
+      object-fit: contain;
       background: #222;
     }
 
@@ -156,7 +155,7 @@
     }
 
     .time {
-      font-size: 48px;
+      font-size: 80px;
       font-family: monospace;
       font-weight: bold;
     }
@@ -265,20 +264,25 @@
     </div>
   </div>
 
-  <div id="photo-history"></div>
-
-  <div id="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>No.</th>
-          <th>LAP TIME</th>
-        </tr>
-      </thead>
-      <tbody id="lap-list">
-      </tbody>
-    </table>
-  </div>
+  <details>
+    <summary style="padding:1em 2em;font-size:20px;">PHOTO</summary>
+    <div id="photo-history"></div>
+  </details>
+  <details>
+    <summary style="padding:1em 2em;font-size:20px;">LAP TIME</summary>
+    <div id="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>LAP TIME</th>
+          </tr>
+        </thead>
+        <tbody id="lap-list">
+        </tbody>
+      </table>
+    </div>
+  </details>
 
   <footer>
     STATUS: <span id="status">READY</span>
