@@ -1,0 +1,189 @@
+<mxfile host="65bd71144e">
+    <diagram name="RC Lap Timer System" id="rc_laptimer">
+        <mxGraphModel dx="626" dy="562" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="RC Car Lap Timer — システム構成図" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="20" width="700" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="pd_psu" value="&lt;b&gt;USB PD 電源&lt;/b&gt;&lt;br&gt;(UGREEN Nexode 45W)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="100" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pd_trigger" value="&lt;b&gt;USB-PD トリガー&lt;/b&gt;&lt;br&gt;出力: 15V DC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="220" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_psu_trigger" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" source="pd_psu" target="pd_trigger" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_psu_trigger_label" value="USB" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="115" y="183" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="stepdown" value="&lt;b&gt;ステップダウン&lt;/b&gt;&lt;br&gt;DC-DC コンバーター&lt;br&gt;15V → 5V / 3A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="342" y="215" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_trigger_stepdown" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;" parent="1" source="pd_trigger" target="stepdown" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_trigger_stepdown_label" value="15V" style="text;html=1;fontSize=10;fillColor=#fffacd;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="220" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="esp32" value="&lt;b&gt;ESP32&lt;/b&gt;&lt;br&gt;(ESP32-D0WD-V3)&lt;br&gt;&lt;hr/&gt;GPIO26: センサ入力&lt;br&gt;GPIO32: 感度VR (ADC)&lt;br&gt;GPIO33: デッドタイムVR (ADC)&lt;br&gt;GPIO17: LED&lt;br&gt;GPIO14: スライドSW&lt;br&gt;GPIO21: I2C SDA&lt;br&gt;GPIO22: I2C SCL&lt;br&gt;BLE: RC_LAPTIMER" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="580" y="280" width="220" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_stepdown_esp32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;entryX=0;entryY=0.509;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.999;exitY=0.45;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="stepdown" target="esp32" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points"/>
+                        <mxPoint x="260" y="390" as="sourcePoint"/>
+                        <mxPoint x="557" y="396.9000000000001" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_stepdown_esp32_label" value="5V" style="text;html=1;fontSize=10;fillColor=#fffacd;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="505" y="350" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="photocoupler" value="&lt;b&gt;フォトカプラ&lt;/b&gt;&lt;br&gt;+ 分圧抵抗回路&lt;br&gt;(信号レベル変換)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="440" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_photo_esp32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;strokeWidth=2;" parent="1" source="photocoupler" target="esp32" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="510" y="475"/>
+                            <mxPoint x="580" y="475"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_photo_esp32_label" value="GPIO26&lt;br&gt;(RISING割込)" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="510" y="455" width="80" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="photo_sensor" value="&lt;b&gt;光電センサー&lt;/b&gt;&lt;br&gt;(透過型)&lt;br&gt;動作電圧: 12〜24V&lt;br&gt;受光側出力 → フォトカプラへ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="78" y="375" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_trigger_sensor" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="160" y="280"/>
+                        </Array>
+                        <mxPoint x="160" y="280" as="sourcePoint"/>
+                        <mxPoint x="160" y="370" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_trigger_sensor_label" value="15V" style="text;html=1;fontSize=10;fillColor=#fffacd;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="115" y="310" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sensor_photo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;strokeWidth=2;exitX=0.992;exitY=0.559;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="photo_sensor" target="photocoupler" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="300" y="420"/>
+                            <mxPoint x="300" y="475"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_sensor_photo_label" value="センサ出力" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="390" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lcd" value="&lt;b&gt;I2C LCD 20×4&lt;/b&gt;&lt;br&gt;アドレス: 0x27&lt;br&gt;TIME / BEST / CURR / PREV" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="355" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_lcd" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="esp32" target="lcd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_lcd_label" value="I2C&lt;br&gt;SDA:21/SCL:22" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="350" width="80" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="led" value="&lt;b&gt;LED&lt;/b&gt;&lt;br&gt;ステータス表示&lt;br&gt;ラップ確定: 3回点滅&lt;br&gt;デッドタイム終了: 1回" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="470" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_led" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="esp32" target="led" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_led_label" value="GPIO17" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="845" y="510" width="55" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="vr_th" value="&lt;b&gt;感度調整 VR&lt;/b&gt;&lt;br&gt;遮光判定時間&lt;br&gt;0〜200ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="555" y="800.5" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_vrth" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="esp32" target="vr_th" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_vrth_label" value="GPIO32 (ADC)" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="800.5" width="80" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="vr_dt" value="&lt;b&gt;デッドタイム VR&lt;/b&gt;&lt;br&gt;再検出禁止時間&lt;br&gt;0.5〜5.0s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="725" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_vrdt" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="esp32" target="vr_dt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_vrdt_label" value="GPIO33 (ADC)" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="655" y="725" width="80" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="slide_sw" value="&lt;b&gt;スライドスイッチ&lt;/b&gt;&lt;br&gt;設定モード切替" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="725" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_sw" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="esp32" target="slide_sw" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_sw_label" value="GPIO14&lt;br&gt;(INPUT_PULLUP)" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="723" width="80" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="smartphone" value="&lt;b&gt;スマートフォン&lt;/b&gt;&lt;br&gt;Web Bluetooth API&lt;br&gt;(Chrome / Android)&lt;br&gt;&lt;hr/&gt;・ラップタイム表示&lt;br&gt;・ストップウォッチ&lt;br&gt;・ベストラップ&lt;br&gt;・自動撮影" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="90" width="200" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_ble" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;dashPattern=8 4;entryX=0;entryY=0.412;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="esp32" target="smartphone" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_esp32_ble_label" value="BLE Notify&lt;br&gt;Lap:XX.XX" style="text;html=1;fontSize=10;fillColor=#ffd7d7;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="775" y="115" width="70" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_title" value="&lt;b&gt;凡例&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="760" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_power" value="電源ライン (15V / 5V)" style="text;html=1;strokeColor=#d6b656;fillColor=#fffacd;fontSize=11;rounded=1;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="785" width="180" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_signal" value="信号ライン" style="text;html=1;strokeColor=#82b366;fillColor=#d5e8d4;fontSize=11;rounded=1;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="818" width="180" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_ble" value="BLE 無線通信 (破線)" style="text;html=1;strokeColor=#b85450;fillColor=#f8cecc;fontSize=11;rounded=1;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="851" width="180" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="&lt;b&gt;ラジコン用&lt;br&gt;バッテリー7.2V&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="762" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="&lt;b&gt;MOSFET&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="662" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="6" value="&lt;b&gt;光電センサー&lt;/b&gt;&lt;br&gt;(透過型)&lt;br&gt;&lt;br&gt;投光側" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="532" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="179.44" y="662" as="sourcePoint"/>
+                        <mxPoint x="179" y="612" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="8" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" target="5" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="179.44" y="761" as="sourcePoint"/>
+                        <mxPoint x="179.44" y="671" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="9" value="7.2V" style="text;html=1;fontSize=10;fillColor=#fffacd;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="623" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" value="7.2V" style="text;html=1;fontSize=10;fillColor=#fffacd;strokeColor=none;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="731" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;strokeWidth=6;fillColor=#f8cecc;endSize=5;endArrow=oval;endFill=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;rounded=0;curved=0;dashPattern=1 1;" parent="1" source="6" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="179.98" y="512" as="sourcePoint"/>
+                        <mxPoint x="179.54" y="462" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="12" value="赤外線" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="487" width="70" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
