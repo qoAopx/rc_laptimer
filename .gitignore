@@ -2,3 +2,4 @@
 .clangd
 .vscode
 .cache
+.theia
