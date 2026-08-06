@@ -98,6 +98,36 @@ function beep(freq = 880, duration = 150) {
 }
 
 // ==========================================
+// ★ 音声読み上げ（Web Speech API）
+// ==========================================
+
+/**
+ * ★ テキストを日本語音声で読み上げる
+ * @param {string} text - 読み上げるテキスト
+ */
+function speak(text) {
+  if (!('speechSynthesis' in window)) return; // 未対応ブラウザは無視
+  // 前の発話が残っていたらキャンセルしてから新しい発話を積む（読み上げの詰まり防止）
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'ja-JP';
+  utter.rate = 1.2;   // やや速め
+  utter.pitch = 1.3;
+  window.speechSynthesis.speak(utter);
+}
+
+/**
+ * ★ ラップタイム（秒）を「〇〇点〇〇秒」の読み上げ用文字列に変換する
+ * @param {number} sec - 秒数
+ * @returns {string} 読み上げ用文字列（例："12点34秒"）
+ */
+function lapTimeToSpeechText(sec) {
+  const wholeSec = Math.floor(sec);
+  const cs = Math.floor((sec * 100) % 100); // センチ秒（小数点2桁）
+  return `${wholeSec}秒${cs}`;
+}
+
+// ==========================================
 // ★ CONNECTボタンのステータスアイコン更新
 // ==========================================
 
@@ -338,8 +368,9 @@ function addLap(time, receiveTime) {
   setBLEState('lap');
 
   if (lapTimes.length === 1) {
-    // ★ 初回通過（スタート検出）：短いビープ1回
+    // ★ 初回通過（スタート検出）：短いビープ1回 ＋ 「スタート」読み上げ
     beep(660, 100);
+    speak("スタート");
     resetStopwatch(receiveTime);
   } else {
     // ★ ラップ確定：高めのビープ2回
@@ -350,6 +381,9 @@ function addLap(time, receiveTime) {
       bestLap = time;
       document.getElementById("best-time").innerText = formatTime(bestLap);
     }
+    // ★ 「〇〇周、〇〇点〇〇秒」を読み上げ（表示上のラップ数と同じ lapTimes.length - 1 を使用）
+    const lapNo = lapTimes.length - 1;
+    speak(`${lapNo}周、${lapTimeToSpeechText(time)}`);
     takePhoto(lapTimes.length - 1, formatTime(time)); // ★ ESP32のラップタイムをそのまま渡す
     // ★ BLE受信時刻を起点に次のラップのストップウォッチをリセット
     resetStopwatch(receiveTime);
