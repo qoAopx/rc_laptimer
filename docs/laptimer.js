@@ -112,7 +112,7 @@ function speak(text) {
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'ja-JP';
   utter.rate = 1.2;   // やや速め
-  utter.pitch = 1.3;
+  utter.pitch = 1.3;  // やや高め
   window.speechSynthesis.speak(utter);
 }
 
