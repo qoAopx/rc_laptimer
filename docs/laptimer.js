@@ -112,7 +112,7 @@ function speak(text) {
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'ja-JP';
   utter.rate = 1.2;   // やや速め
-  utter.pitch = 1.3;  // やや高め
+  utter.pitch = 1.3;
   window.speechSynthesis.speak(utter);
 }
 
@@ -122,9 +122,11 @@ function speak(text) {
  * @returns {string} 読み上げ用文字列（例："12点34秒"）
  */
 function lapTimeToSpeechText(sec) {
-  const wholeSec = Math.floor(sec);
+  const wholeMin = Math.floor(sec / 60);// 分
+  const msgMin = wholeMin === 0 ? '' : `${wholeMin}分`;
+  const wholeSec = Math.floor(sec % 60);// 秒だけ
   const cs = Math.floor((sec * 100) % 100); // センチ秒（小数点2桁）
-  return `${wholeSec}秒${cs}`;
+  return `${msgMin} ${wholeSec}秒 ${cs}`;
 }
 
 // ==========================================
@@ -383,7 +385,7 @@ function addLap(time, receiveTime) {
     }
     // ★ 「〇〇周、〇〇点〇〇秒」を読み上げ（表示上のラップ数と同じ lapTimes.length - 1 を使用）
     const lapNo = lapTimes.length - 1;
-    speak(`${lapNo}周、${lapTimeToSpeechText(time)}`);
+    speak(`${lapNo}周目、 ${lapTimeToSpeechText(time)}`);
     takePhoto(lapTimes.length - 1, formatTime(time)); // ★ ESP32のラップタイムをそのまま渡す
     // ★ BLE受信時刻を起点に次のラップのストップウォッチをリセット
     resetStopwatch(receiveTime);
