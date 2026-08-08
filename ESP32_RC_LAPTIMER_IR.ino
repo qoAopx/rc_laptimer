@@ -50,6 +50,7 @@ const int PHOTO_PIN = 26;  // 光電センサ入力ピン
 const int TH_VR_PIN = 32;  // 反応時間調整ボリューム (0～200ms)
 const int ST_VR_PIN = 33;  // デッドタイム調整ボリューム (0.0～5.0s)
 const int LED_PIN = 17;
+const int BUZZER_PIN = 19;
 const int SETTING_PIN = 14;  // 設定モード切り替えスライドスイッチ
 const int I2C_SDA = 21;
 const int I2C_SCL = 22;
@@ -64,6 +65,8 @@ const int LED_OFF_MS = 100;                        // LED消灯時間
 const int SETUP_FLASH_COUNT = 2;                   // 起動時LEDフラッシュ回数
 const int SWITCH_DEBOUNCE_MS = 50;                 // スライドスイッチデバウンス時間
 const unsigned long BEST_TIME_INIT_MS = 99999000UL;  // ベストタイム初期値(ms)
+const int NOTE_FREQ = 4000;                         // ブザー音の高さ（Hz）：4000Hz
+const unsigned long TONE_DURATION = 100;            // ブザー鳴らす時間（ミリ秒）
 
 // --- グローバル変数 ---
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -84,7 +87,7 @@ volatile bool isSensorTriggered = false;
 volatile int64_t isrTriggerTimeUs = 0;  // μs単位（esp_timer_get_time()）
 
 volatile bool isSensing = false;  // ISRが発火してからセンサー確定待ち中フラグ
-int64_t sensorTriggerUs = 0;      // 確定したトリガー時刻(μs)
+volatile int64_t sensorTriggerUs = 0;      // 確定したトリガー時刻(μs)
 
 // ラップタイム管理（ms単位で保持して精度損失を防ぐ）
 int64_t lastLapTimeUs = 0;  // lastLapTimeをμs単位で保持
@@ -103,6 +106,10 @@ int ledState = LOW;
 bool settingMode = false;
 bool rawSettingMode = false;
 unsigned long lastSwitchMs = 0;
+
+// --- ブザー状態管理 ---
+bool isBuzzerRinging = false;   // ブザーが鳴っているかどうか
+int64_t buzzerStartTime = 0; // ブザーを鳴らし始めた時刻
 
 // ============================================================
 // BLEコールバック（staticインスタンスでメモリリークを防止）
@@ -342,8 +349,12 @@ void setup() {
   pinMode(ST_VR_PIN, INPUT);
   pinMode(PHOTO_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
   pinMode(SETTING_PIN, INPUT_PULLUP);
   digitalWrite(LED_PIN, LOW);
+
+  // センサを通過したらブザーは鳴らす
+  //tone(BUZZER_PIN, NOTE_FREQ); // 時間指定なしで音を出す
 
   // 割り込み設定（FALLINGエッジで遮光検出）
   attachInterrupt(digitalPinToInterrupt(PHOTO_PIN), handleSensorInterrupt, RISING);
@@ -452,7 +463,7 @@ void loop() {
               pCharacteristic->notify();
             }
 
-            triggerFlashLED(3);
+            triggerFlashLED(1);
             lastLapTimeUs = nowUs;
 
             // シリアルログ（デバッグ用）
@@ -466,6 +477,11 @@ void loop() {
             triggerFlashLED(1);
             Serial.println(F("Measurement Started"));
           }
+
+          // センサを通過したらブザーは鳴らす
+          tone(BUZZER_PIN, NOTE_FREQ); // 時間指定なしで音を出す
+          buzzerStartTime = esp_timer_get_time(); // 鳴らし始めた時刻を記録
+          isBuzzerRinging = true;         // ブザー鳴動中フラグをON
         }
       }
     }
@@ -480,6 +496,16 @@ void loop() {
     if (elapsedSinceLapMs >= deadTimeMs) {
       isTriggered = true;
       triggerFlashLED(1);
+    }
+  }
+
+  // ブザーが鳴っていたら停止
+  if (isBuzzerRinging) {
+    // 指定した時間（100ms）が経過したかチェック
+    unsigned long elapsedBuzzerMs = (unsigned long)((esp_timer_get_time() - buzzerStartTime) / 1000LL);
+    if (elapsedBuzzerMs >= TONE_DURATION) {
+      noTone(BUZZER_PIN);        // 音を止める
+      isBuzzerRinging = false;   // ブザー鳴動中フラグをOFF
     }
   }
 
