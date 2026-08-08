@@ -199,6 +199,110 @@ function setBLEState(state) {
 }
 
 // ==========================================
+// ★ BLE Notify ヘルスチェック（購読だけ再開する軽量リカバリ）
+// ==========================================
+// GATT接続(status=CONNECTED)は維持されたまま、Notify購読だけが
+// 内部的に停止してデータが来なくなる現象（Bluefy/WKWebView等）への対策。
+// 一定時間データを受信しなければ、まずは軽量な「Notify再購読」を試み、
+// それでも失敗した場合のみGATT自体の再接続にフォールバックする。
+
+/** @type {number} 最後にBLEデータを受信した時刻（Date.now()基準） */
+let lastReceiveTime = Date.now();
+/** @type {number|null} ヘルスチェックのインターバルID */
+let healthCheckIntervalId = null;
+
+const HEALTH_CHECK_INTERVAL_MS = 5000;  // 5秒ごとにチェック
+const NO_DATA_TIMEOUT_MS = 20000;       // 20秒データが来なければ異常とみなす
+
+/**
+ * ★ ヘルスチェックを開始する（BLE接続確立時に呼ぶ）
+ */
+function startHealthCheck() {
+  stopHealthCheck();
+  lastReceiveTime = Date.now();
+  healthCheckIntervalId = setInterval(async () => {
+    if (!device || !device.gatt.connected) return; // 切断中は何もしない
+    const elapsed = Date.now() - lastReceiveTime;
+    if (elapsed > NO_DATA_TIMEOUT_MS) {
+      console.warn(`Notify無受信 ${Math.floor(elapsed / 1000)}秒経過。購読を再開します。`);
+      await resubscribeNotify();
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+/**
+ * ★ ヘルスチェックを停止する
+ */
+function stopHealthCheck() {
+  if (healthCheckIntervalId !== null) {
+    clearInterval(healthCheckIntervalId);
+    healthCheckIntervalId = null;
+  }
+}
+
+/**
+ * ★ GATT接続はそのままに、Notify購読だけをやり直す（軽量リカバリ）
+ * 失敗した場合のみフルのGATT再接続にフォールバックする
+ */
+async function resubscribeNotify() {
+  if (!characteristic) return;
+  try {
+    await characteristic.stopNotifications();
+    await characteristic.startNotifications();
+    lastReceiveTime = Date.now(); // 再購読直後にタイムアウト判定が再発火しないようリセット
+    console.log("BLE Notify購読を再開しました");
+  } catch (e) {
+    console.warn("Notify再購読に失敗。GATT再接続を試みます:", e);
+    await attemptReconnect();
+  }
+}
+
+/**
+ * ★ GATT接続自体を切断→再接続し、Notify購読をやり直す（フルリカバリ）
+ * resubscribeNotify() が失敗した場合の最終手段
+ */
+async function attemptReconnect() {
+  if (!device) return;
+  const status = document.getElementById("status");
+  try {
+    status.innerText = "RECONNECTING...";
+    setConnectBtnState('connecting');
+
+    if (device.gatt.connected) {
+      device.gatt.disconnect();
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    await characteristic.startNotifications();
+    characteristic.addEventListener("characteristicvaluechanged", handleNotify);
+
+    lastReceiveTime = Date.now();
+    status.innerText = "CONNECTED";
+    setBLEState('connected');
+    setConnectBtnState('connected');
+    console.log("BLE GATT再接続に成功しました");
+  } catch (e) {
+    status.innerText = "RECONNECT FAILED";
+    setConnectBtnState('disconnected');
+    console.error("BLE再接続に失敗しました:", e);
+  }
+}
+
+// ★ 画面がバックグラウンドから復帰した瞬間にも無受信時間をチェックする
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && device && device.gatt && device.gatt.connected) {
+    const elapsed = Date.now() - lastReceiveTime;
+    if (elapsed > NO_DATA_TIMEOUT_MS) {
+      console.warn(`画面復帰時に無受信 ${Math.floor(elapsed / 1000)}秒を検出。購読を再開します。`);
+      resubscribeNotify();
+    }
+  }
+});
+
+// ==========================================
 // BLE通信制御ロジック（変更なし）
 // ==========================================
 
@@ -228,6 +332,7 @@ async function connectBLE() {
     status.innerText = "CONNECTED";
     setBLEState('connected');       // ★ 接続時：背景を黒に
     setConnectBtnState('connected'); // ★
+    startHealthCheck(); // ★ Notify無受信を監視するヘルスチェックを開始
   } catch (e) {
     status.innerText = "ERROR: " + e.message;
     setConnectBtnState('disconnected'); // ★ エラー時も未接続アイコンに戻す
@@ -241,6 +346,7 @@ function onDisconnected() {
   document.getElementById("status").innerText = "DISCONNECTED";
   setBLEState('disconnected');        // ★ 切断時：背景を濃いグレーに
   setConnectBtnState('disconnected'); // ★
+  stopHealthCheck(); // ★ ヘルスチェック停止
   // ★ ストップウォッチを停止
   if (rafId !== null) {
     cancelAnimationFrame(rafId);
@@ -344,6 +450,7 @@ function takePhoto(lapNum, lapTimeStr) {
  * @param {Event} event - characteristicvaluechanged イベントオブジェクト
  */
 function handleNotify(event) {
+  lastReceiveTime = Date.now(); // ★ ヘルスチェック用に最終受信時刻を更新
   // ★ BLE受信の瞬間のタイムスタンプを記録（ストップウォッチのアンカーに使用）
   const receiveTime = performance.now();
   const val = new TextDecoder().decode(event.target.value);
