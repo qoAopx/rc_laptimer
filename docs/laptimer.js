@@ -327,6 +327,8 @@ function takePhoto(lapNum, lapTimeStr) {
   const exifDate = formatted.replaceAll("/", ":");
   // Exifオブジェクトの作成
   // 0th IFD (画像基本情報) と Exif IFD (撮影詳細情報) にデータを格納します
+  // ★ piexifjsのバグ修正：UserCommentの型を正しいUndefinedに直す（1回だけでOK）
+  piexif.TAGS["Exif"][piexif.ExifIFD.UserComment].type = "Undefined";
   const exifObj = {
     "0th": {
       [piexif.ImageIFD.Artist]: "qoAop",
