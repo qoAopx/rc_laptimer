@@ -335,10 +335,7 @@ function takePhoto(lapNum, lapTimeStr) {
     Exif: {
       [piexif.ExifIFD.DateTimeOriginal]: exifDate, // 撮影（作成）日時
       [piexif.ExifIFD.DateTimeDigitized]: exifDate, // デジタル化日時
-      [piexif.ExifIFD.UserComment]: JSON.stringify({
-        lap: lapNum,
-        lapTime: lapTimeStr,
-      }), // ユーザーコメント
+      [piexif.ExifIFD.UserComment]: "ASCII\x00\x00\x00" + JSON.stringify({ lap: lapNum, lapTime: lapTimeStr }) // ユーザーコメント
     },
   };
   // Exifデータをバイナリ文字列に変換
