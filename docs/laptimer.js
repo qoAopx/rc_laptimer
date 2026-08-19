@@ -35,11 +35,11 @@ let bestLap = Infinity;
 /** @type {MediaStream|null} カメラの映像ストリーム */
 let stream = null;
 /** @type {HTMLVideoElement} リアルタイムのカメラ映像を表示するvideo要素 */
-const video = document.getElementById('video');
+const video = document.getElementById("video");
 /** @type {HTMLCanvasElement} 映像を静止画としてキャプチャするためのcanvas要素 */
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById("canvas");
 /** @type {HTMLElement} 撮影時の画面フラッシュ演出を担う要素 */
-const flash = document.getElementById('shutter-flash');
+const flash = document.getElementById("shutter-flash");
 
 // ==========================================
 // ★ スリープ防止（Wake Lock API）
@@ -52,17 +52,17 @@ let wakeLock = null;
  * ★ スリープ防止を開始する
  */
 async function requestWakeLock() {
-  if ('wakeLock' in navigator) {
+  if ("wakeLock" in navigator) {
     try {
-      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock = await navigator.wakeLock.request("screen");
       // タブ復帰時に再取得（バックグラウンドに行くと自動解放されるため）
-      document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'visible' && wakeLock === null) {
-          wakeLock = await navigator.wakeLock.request('screen');
+      document.addEventListener("visibilitychange", async () => {
+        if (document.visibilityState === "visible" && wakeLock === null) {
+          wakeLock = await navigator.wakeLock.request("screen");
         }
       });
     } catch (e) {
-      console.warn('Wake Lock取得失敗:', e);
+      console.warn("Wake Lock取得失敗:", e);
     }
   }
 }
@@ -84,15 +84,19 @@ let audioCtx = null;
  */
 function beep(freq = 880, duration = 150) {
   // AudioContextはユーザー操作後でないと生成できないため遅延初期化
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx)
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain);
   gain.connect(audioCtx.destination);
-  osc.type = 'square';
+  osc.type = "square";
   osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
   gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000);
+  gain.gain.exponentialRampToValueAtTime(
+    0.001,
+    audioCtx.currentTime + duration / 1000
+  );
   osc.start(audioCtx.currentTime);
   osc.stop(audioCtx.currentTime + duration / 1000);
 }
@@ -106,12 +110,12 @@ function beep(freq = 880, duration = 150) {
  * @param {string} text - 読み上げるテキスト
  */
 function speak(text) {
-  if (!('speechSynthesis' in window)) return; // 未対応ブラウザは無視
+  if (!("speechSynthesis" in window)) return; // 未対応ブラウザは無視
   // 前の発話が残っていたらキャンセルしてから新しい発話を積む（読み上げの詰まり防止）
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = 'ja-JP';
-  utter.rate = 1.2;   // やや速め
+  utter.lang = "ja-JP";
+  utter.rate = 1.2; // やや速め
   utter.pitch = 1.3;
   window.speechSynthesis.speak(utter);
 }
@@ -122,9 +126,9 @@ function speak(text) {
  * @returns {string} 読み上げ用文字列（例："12点34秒"）
  */
 function lapTimeToSpeechText(sec) {
-  const wholeMin = Math.floor(sec / 60);// 分
-  const msgMin = wholeMin === 0 ? '' : `${wholeMin}分`;
-  const wholeSec = Math.floor(sec % 60);// 秒だけ
+  const wholeMin = Math.floor(sec / 60); // 分
+  const msgMin = wholeMin === 0 ? "" : `${wholeMin}分`;
+  const wholeSec = Math.floor(sec % 60); // 秒だけ
   const cs = Math.floor((sec * 100) % 100); // センチ秒（小数点2桁）
   return `${msgMin} ${wholeSec}秒 ${cs}`;
 }
@@ -138,14 +142,14 @@ function lapTimeToSpeechText(sec) {
  * @param {'disconnected'|'connecting'|'connected'} state
  */
 function setConnectBtnState(state) {
-  const btn = document.getElementById('connect-btn');
+  const btn = document.getElementById("connect-btn");
   if (!btn) return;
   const labels = {
-    disconnected: '🔴 CONNECT',
-    connecting:   '🟡 CONNECT',
-    connected:    '🟢 CONNECT',
+    disconnected: "🔴 CONNECT",
+    connecting: "🟡 CONNECT",
+    connected: "🟢 CONNECT",
   };
-  btn.innerText = labels[state] ?? '🔴 CONNECT';
+  btn.innerText = labels[state] ?? "🔴 CONNECT";
 }
 
 // ==========================================
@@ -187,120 +191,16 @@ function resetStopwatch(anchorTime) {
  */
 function setBLEState(state) {
   const body = document.body;
-  body.classList.remove('ble-connected', 'ble-lap');
-  if (state === 'connected') {
-    body.classList.add('ble-connected');
-  } else if (state === 'lap') {
+  body.classList.remove("ble-connected", "ble-lap");
+  if (state === "connected") {
+    body.classList.add("ble-connected");
+  } else if (state === "lap") {
     // 一度クラスを外して再付与することでアニメーションをリトリガーする
     void body.offsetWidth;
-    body.classList.add('ble-connected', 'ble-lap');
+    body.classList.add("ble-connected", "ble-lap");
   }
   // 'disconnected' は何もクラスを付けない（CSSデフォルトの濃いグレー）
 }
-
-// ==========================================
-// ★ BLE Notify ヘルスチェック（購読だけ再開する軽量リカバリ）
-// ==========================================
-// GATT接続(status=CONNECTED)は維持されたまま、Notify購読だけが
-// 内部的に停止してデータが来なくなる現象（Bluefy/WKWebView等）への対策。
-// 一定時間データを受信しなければ、まずは軽量な「Notify再購読」を試み、
-// それでも失敗した場合のみGATT自体の再接続にフォールバックする。
-
-/** @type {number} 最後にBLEデータを受信した時刻（Date.now()基準） */
-let lastReceiveTime = Date.now();
-/** @type {number|null} ヘルスチェックのインターバルID */
-let healthCheckIntervalId = null;
-
-const HEALTH_CHECK_INTERVAL_MS = 5000;  // 5秒ごとにチェック
-const NO_DATA_TIMEOUT_MS = 20000;       // 20秒データが来なければ異常とみなす
-
-/**
- * ★ ヘルスチェックを開始する（BLE接続確立時に呼ぶ）
- */
-function startHealthCheck() {
-  stopHealthCheck();
-  lastReceiveTime = Date.now();
-  healthCheckIntervalId = setInterval(async () => {
-    if (!device || !device.gatt.connected) return; // 切断中は何もしない
-    const elapsed = Date.now() - lastReceiveTime;
-    if (elapsed > NO_DATA_TIMEOUT_MS) {
-      console.warn(`Notify無受信 ${Math.floor(elapsed / 1000)}秒経過。購読を再開します。`);
-      await resubscribeNotify();
-    }
-  }, HEALTH_CHECK_INTERVAL_MS);
-}
-
-/**
- * ★ ヘルスチェックを停止する
- */
-function stopHealthCheck() {
-  if (healthCheckIntervalId !== null) {
-    clearInterval(healthCheckIntervalId);
-    healthCheckIntervalId = null;
-  }
-}
-
-/**
- * ★ GATT接続はそのままに、Notify購読だけをやり直す（軽量リカバリ）
- * 失敗した場合のみフルのGATT再接続にフォールバックする
- */
-async function resubscribeNotify() {
-  if (!characteristic) return;
-  try {
-    await characteristic.stopNotifications();
-    await characteristic.startNotifications();
-    lastReceiveTime = Date.now(); // 再購読直後にタイムアウト判定が再発火しないようリセット
-    console.log("BLE Notify購読を再開しました");
-  } catch (e) {
-    console.warn("Notify再購読に失敗。GATT再接続を試みます:", e);
-    await attemptReconnect();
-  }
-}
-
-/**
- * ★ GATT接続自体を切断→再接続し、Notify購読をやり直す（フルリカバリ）
- * resubscribeNotify() が失敗した場合の最終手段
- */
-async function attemptReconnect() {
-  if (!device) return;
-  const status = document.getElementById("status");
-  try {
-    status.innerText = "RECONNECTING...";
-    setConnectBtnState('connecting');
-
-    if (device.gatt.connected) {
-      device.gatt.disconnect();
-      await new Promise(r => setTimeout(r, 300));
-    }
-
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-    await characteristic.startNotifications();
-    characteristic.addEventListener("characteristicvaluechanged", handleNotify);
-
-    lastReceiveTime = Date.now();
-    status.innerText = "CONNECTED";
-    setBLEState('connected');
-    setConnectBtnState('connected');
-    console.log("BLE GATT再接続に成功しました");
-  } catch (e) {
-    status.innerText = "RECONNECT FAILED";
-    setConnectBtnState('disconnected');
-    console.error("BLE再接続に失敗しました:", e);
-  }
-}
-
-// ★ 画面がバックグラウンドから復帰した瞬間にも無受信時間をチェックする
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && device && device.gatt && device.gatt.connected) {
-    const elapsed = Date.now() - lastReceiveTime;
-    if (elapsed > NO_DATA_TIMEOUT_MS) {
-      console.warn(`画面復帰時に無受信 ${Math.floor(elapsed / 1000)}秒を検出。購読を再開します。`);
-      resubscribeNotify();
-    }
-  }
-});
 
 // ==========================================
 // BLE通信制御ロジック（変更なし）
@@ -313,14 +213,14 @@ async function connectBLE() {
   const status = document.getElementById("status");
   try {
     status.innerText = "SELECTING...";
-    setConnectBtnState('connecting'); // ★
+    setConnectBtnState("connecting"); // ★
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
     });
 
     device.addEventListener("gattserverdisconnected", onDisconnected);
     status.innerText = "CONNECTING...";
-    setConnectBtnState('connecting'); // ★
+    setConnectBtnState("connecting"); // ★
 
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
@@ -330,12 +230,11 @@ async function connectBLE() {
     characteristic.addEventListener("characteristicvaluechanged", handleNotify);
 
     status.innerText = "CONNECTED";
-    setBLEState('connected');       // ★ 接続時：背景を黒に
-    setConnectBtnState('connected'); // ★
-    startHealthCheck(); // ★ Notify無受信を監視するヘルスチェックを開始
+    setBLEState("connected"); // ★ 接続時：背景を黒に
+    setConnectBtnState("connected"); // ★
   } catch (e) {
     status.innerText = "ERROR: " + e.message;
-    setConnectBtnState('disconnected'); // ★ エラー時も未接続アイコンに戻す
+    setConnectBtnState("disconnected"); // ★ エラー時も未接続アイコンに戻す
   }
 }
 
@@ -344,9 +243,8 @@ async function connectBLE() {
  */
 function onDisconnected() {
   document.getElementById("status").innerText = "DISCONNECTED";
-  setBLEState('disconnected');        // ★ 切断時：背景を濃いグレーに
-  setConnectBtnState('disconnected'); // ★
-  stopHealthCheck(); // ★ ヘルスチェック停止
+  setBLEState("disconnected"); // ★ 切断時：背景を濃いグレーに
+  setConnectBtnState("disconnected"); // ★
   // ★ ストップウォッチを停止
   if (rafId !== null) {
     cancelAnimationFrame(rafId);
@@ -369,12 +267,12 @@ function disconnectBLE() {
  * カメラの起動と停止を切り替える非同期関数
  */
 async function toggleCamera() {
-  const btn = document.getElementById('camera-btn');
+  const btn = document.getElementById("camera-btn");
   if (!stream) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
-        audio: false
+        audio: false,
       });
       video.srcObject = stream;
       video.play();
@@ -384,7 +282,7 @@ async function toggleCamera() {
       alert("カメラの起動に失敗しました: " + err);
     }
   } else {
-    stream.getTracks().forEach(track => track.stop());
+    stream.getTracks().forEach((track) => track.stop());
     stream = null;
     video.srcObject = null;
     btn.innerText = "START CAMERA";
@@ -401,9 +299,9 @@ function takePhoto(lapNum, lapTimeStr) {
   if (!stream) return;
 
   flash.style.opacity = 1;
-  setTimeout(() => flash.style.opacity = 0, 100);
+  setTimeout(() => (flash.style.opacity = 0), 100);
 
-  const context = canvas.getContext('2d');
+  const context = canvas.getContext("2d");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -414,30 +312,51 @@ function takePhoto(lapNum, lapTimeStr) {
   context.fillText(`LAP ${lapNum}: ${lapTimeStr}`, 30, canvas.height - 30);
 
   const now = new Date();
-  const formatted = now.toLocaleString('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+  const formatted = now.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
   context.font = "bold 24px monospace";
   context.fillStyle = "yellow";
   context.fillText(formatted, 30, 40);
 
+  const exifDate = formatted.replaceAll("/", ":");
+  // Exifオブジェクトの作成
+  // 0th IFD (画像基本情報) と Exif IFD (撮影詳細情報) にデータを格納します
+  const exifObj = {
+    "0th": {
+      [piexif.ImageIFD.Artist]: "qoAop",
+      [piexif.ImageIFD.Software]: "LapTimer",
+    },
+    Exif: {
+      [piexif.ExifIFD.DateTimeOriginal]: exifDate, // 撮影（作成）日時
+      [piexif.ExifIFD.DateTimeDigitized]: exifDate, // デジタル化日時
+      [piexif.ExifIFD.UserComment]: JSON.stringify({
+        lap: lapNum,
+        lapTime: lapTimeStr,
+      }), // ユーザーコメント
+    },
+  };
+  // Exifデータをバイナリ文字列に変換
+  const exifBytes = piexif.dump(exifObj);
+  // 元のJPEG Data URLにExifバイナリを注入（埋め込み）
+  const originalDataUrl = canvas.toDataURL("image/jpeg");
+  const exifDataUrl = piexif.insert(exifBytes, originalDataUrl);
 
-  const dataUrl = canvas.toDataURL("image/jpeg");
-
-  const historyContainer = document.getElementById('photo-history');
-  const img = document.createElement('img');
-  img.src = dataUrl;
-  img.className = 'captured-img';
+  const historyContainer = document.getElementById("photo-history");
+  const img = document.createElement("img");
+  //img.src = dataUrl;
+  img.src = exifDataUrl;
+  img.className = "captured-img";
   historyContainer.insertBefore(img, historyContainer.firstChild);
 
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.download = `lap_${lapNum}_${new Date().getTime()}.jpeg`;
-  link.href = dataUrl;
+  link.href = exifDataUrl;
   link.click();
 }
 
@@ -450,7 +369,6 @@ function takePhoto(lapNum, lapTimeStr) {
  * @param {Event} event - characteristicvaluechanged イベントオブジェクト
  */
 function handleNotify(event) {
-  lastReceiveTime = Date.now(); // ★ ヘルスチェック用に最終受信時刻を更新
   // ★ BLE受信の瞬間のタイムスタンプを記録（ストップウォッチのアンカーに使用）
   const receiveTime = performance.now();
   const val = new TextDecoder().decode(event.target.value);
@@ -474,7 +392,7 @@ function addLap(time, receiveTime) {
   lapTimes.unshift(time);
 
   // ★ ラップ通過時の背景を赤黒点滅させる
-  setBLEState('lap');
+  setBLEState("lap");
 
   if (lapTimes.length === 1) {
     // ★ 初回通過（スタート検出）：短いビープ1回 ＋ 「スタート」読み上げ
@@ -552,7 +470,9 @@ function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   const cs = Math.floor((sec * 100) % 100);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
+  return `${m.toString().padStart(2, "0")}:${s
+    .toString()
+    .padStart(2, "0")}.${cs.toString().padStart(2, "0")}`;
 }
 
 // ==========================================
@@ -568,12 +488,17 @@ function copyLaps() {
     return;
   }
 
-  const text = lapTimes.slice().reverse().map((t, i) => `Lap ${i + 1}: ${formatTime(t)}`).join("\n");
+  const text = lapTimes
+    .slice()
+    .reverse()
+    .map((t, i) => `Lap ${i + 1}: ${formatTime(t)}`)
+    .join("\n");
 
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text)
+    navigator.clipboard
+      .writeText(text)
       .then(() => alert("コピーしました"))
-      .catch(err => fallbackCopyTextToClipboard(text));
+      .catch((err) => fallbackCopyTextToClipboard(text));
   } else {
     fallbackCopyTextToClipboard(text);
   }
@@ -617,6 +542,6 @@ function clearData() {
     if (avgTimeElem) avgTimeElem.innerText = "--:--.--";
 
     document.getElementById("lap-list").innerHTML = "";
-    document.getElementById('photo-history').innerHTML = "";
+    document.getElementById("photo-history").innerHTML = "";
   }
 }
