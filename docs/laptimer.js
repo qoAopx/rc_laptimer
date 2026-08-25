@@ -466,13 +466,13 @@ function updateTable() {
  * @returns {string} フォーマット済みの時間文字列 (例: "01:23.45")
  */
 function formatTime(sec) {
-  // 1. 秒数を100倍して四捨五入（センチ秒単位の整数にする）
-  const totalCs = Math.round(sec * 100);
-
-  // 2. センチ秒から分・秒・余りのセンチ秒を計算（繰り上がりも自動で処理される）
-  const m = Math.floor(totalCs / 6000);
-  const s = Math.floor((totalCs % 6000) / 100);
-  const cs = totalCs % 100;
+  // 秒数(sec)を一旦ミリ秒(整数)に変換し、四捨五入して誤差を排除する
+  const totalMs = Math.round(sec * 1000);
+  // Arduino側と同じ「+ 5ms 繰り上がり補正」を行った後に整数計算
+  const roundedMs = totalMs + 5;
+  const m = Math.floor(roundedMs / 60000);
+  const s = Math.floor((roundedMs % 60000) / 1000);
+  const cs = Math.floor((roundedMs % 1000) / 10);
 
   return `${m.toString().padStart(2, "0")}:${s
     .toString()
