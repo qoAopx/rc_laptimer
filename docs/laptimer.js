@@ -466,9 +466,14 @@ function updateTable() {
  * @returns {string} フォーマット済みの時間文字列 (例: "01:23.45")
  */
 function formatTime(sec) {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  const cs = Math.floor((sec * 100) % 100);
+  // 1. 秒数を100倍して四捨五入（センチ秒単位の整数にする）
+  const totalCs = Math.round(sec * 100);
+
+  // 2. センチ秒から分・秒・余りのセンチ秒を計算（繰り上がりも自動で処理される）
+  const m = Math.floor(totalCs / 6000);
+  const s = Math.floor((totalCs % 6000) / 100);
+  const cs = totalCs % 100;
+
   return `${m.toString().padStart(2, "0")}:${s
     .toString()
     .padStart(2, "0")}.${cs.toString().padStart(2, "0")}`;
