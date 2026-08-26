@@ -14,6 +14,12 @@
  *  - formatTime()をsnprintfに変更しバッファサイズを明示
  *  - 時刻ソースをすべてμs(int64_t)に統一し、ms変換はその都度実施
  * ==============================================================================
+ * #define LoRa_ModeSettingPin_M0 4
+ * #define LoRa_ModeSettingPin_M1 13
+ * #define LoRa_RxPin 18
+ * #define LoRa_TxPin 23
+ * #define LoRa_AUXPin 34
+ * #define LoRa_BaudRate 9600
  */
 
 /*
@@ -38,7 +44,9 @@ Crystal frequency:  40MHz
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 
+#include "esp_system.h" // リセット理由の取得に必要なヘッダーファイル
 #include "esp_timer.h"  // esp_timer_get_time() 用
+#include "esp32_e220900t22s_jp_lib_v2.h"  // ★ CLEALINK E220 LoRaライブラリ（内部でfirmware.hをinclude）
 
 // --- BLE設定 ---
 #define BLE_NAME "RC_LAPTIMER"
@@ -57,7 +65,7 @@ const int I2C_SCL = 22;
 
 // --- 定数 ---
 const int ADC_READ_INTERVAL_MS = 100;              // ADC読み取り周期
-const int LCD_UPDATE_INTERVAL_MS = 250;            // LCD更新周期
+const int LCD_UPDATE_INTERVAL_MS = 333;            // LCD更新周期
 const unsigned long MIN_DEAD_TIME_MS = 500;        // デッドタイム最小値（ボリューム最小でも500ms）
 const unsigned long BLE_RECONNECT_DELAY_MS = 500;  // BLE再接続待ち時間
 const int LED_ON_MS = 50;                          // LED点灯時間
@@ -111,6 +119,34 @@ unsigned long lastSwitchMs = 0;
 bool isBuzzerRinging = false;   // ブザーが鳴っているかどうか
 int64_t buzzerStartTime = 0; // ブザーを鳴らし始めた時刻
 
+// --- LoRa関連（★追加） ---
+// ピン配置・UARTボーレートは esp32_e220900t22s_jp_lib_v2.h 内のデフォルト定義をそのまま使用：
+//   LoRa_ModeSettingPin_M0 = 4 / LoRa_ModeSettingPin_M1 = 13
+//   LoRa_RxPin = 18 / LoRa_TxPin = 23 / LoRa_AUXPin = 34 / LoRa_BaudRate = 9600
+// 配線を変える場合は esp32_e220900t22s_jp_lib_v2.h 側の #define を書き換えてください。
+CLoRa lora;                         // ★ LoRaライブラリインスタンス
+bool loraInitialized = false;       // ★ LoRa初期化成否フラグ
+unsigned long loraTxCount = 0;      // ★ LoRa送信成功カウント（シリアル表示用）
+unsigned long loraTxFailCount = 0;  // ★ LoRa送信失敗カウント（シリアル表示用）
+
+// リセット理由を文字列で返す関数
+const char* getResetReasonString() {
+  esp_reset_reason_t reason = esp_reset_reason();
+  switch (reason) {
+    //                             "01234567890123456789"
+    case ESP_RST_POWERON:   return "PowerON(NormalStart)";
+    case ESP_RST_EXT:       return "EXTERNAL PIN RESET  ";
+    case ESP_RST_SW:        return "SOFTWARE RESET ESP32";
+    case ESP_RST_PANIC:     return "CRASH/PANIC (Except)";
+    case ESP_RST_INT_WDT:   return "WATCHDOG (Interrupt)";
+    case ESP_RST_TASK_WDT:  return "WATCHDOG (Task)     ";
+    case ESP_RST_WDT:       return "WATCHDOG (Other)    ";
+    case ESP_RST_DEEPSLEEP: return "DEEP SLEEP WAKEUP   ";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT VoltageDrop";
+    case ESP_RST_SDIO:      return "SDIO RESET          ";
+    default:                return "UNKNOWN             ";
+  }
+}
 // ============================================================
 // BLEコールバック（staticインスタンスでメモリリークを防止）
 // ============================================================
@@ -192,14 +228,20 @@ void formatTime(unsigned long time_ms, char* outBuf, size_t bufSize) {
   const unsigned long MAX_TIME_MS = 59UL * 60UL * 1000UL;  // ★ 59分59.99秒以上は異常値扱い
   // 0または異常値は "00:00.00" で表示
   if (time_ms == 0 || time_ms >= MAX_TIME_MS) {
-    snprintf(outBuf, bufSize, "00:00.00     ");
+    snprintf(outBuf, bufSize, "00:00.00   ");
     return;
   }
-  unsigned long s_total = time_ms / 1000;
-  int m = (int)(s_total / 60);
-  int s = (int)(s_total % 60);
-  int cs = (int)((time_ms % 1000) / 10);  // センチ秒（0.01秒単位）
+  // BLE送信と同じロジックで一度Floatにしてから整数に戻す。
+  char bleBuf[32];
+  float lapSec = time_ms / 1000.0f;
+  snprintf(bleBuf, sizeof(bleBuf), "%6.2f", lapSec);
+  float rounded_sec = atof(bleBuf); // floatに変換
+  unsigned long rounded_ms = (int)(rounded_sec * 1000UL);
+  int m  = (int)(rounded_ms / 60000UL);          // 1分 = 60,000ms
+  int s  = (int)((rounded_ms % 60000UL) / 1000);  // 余りのミリ秒から「秒」を算出
+  int cs = (int)((rounded_ms % 1000) / 10);       // さらに余ったミリ秒から「センチ秒」を算出
   snprintf(outBuf, bufSize, "%02d:%02d.%02d     ", m, s, cs);
+  // Serial.printf("formatTime: %lu , %6.2f , %s\n", time_ms, lapSec, outBuf);
 }
 
 // ============================================================
@@ -232,6 +274,17 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lastSettingMode = !settingMode;  // 強制再描画トリガー
   }
 
+  // --- 一定時間ごとにLCDを強制リセットして復旧させる処理 ---
+  static unsigned long lastLcdRecoveryMs = 0;
+  if (millis() - lastLcdRecoveryMs >= 3*60*1000) { // 10秒周期
+    lastLcdRecoveryMs = millis();
+    lcd.init();      // LCD内部の制御ICを強制初期化（これで固まりが解けます）
+    lcd.backlight(); // バックライトを再点灯
+    // フラグ等をリセットして、画面全体を再描画させる
+    lastSettingMode = !settingMode;   // 強制再描画トリガー
+    Serial.println(F("LCD Force Reset"));
+  }
+
   // モードが切り替わったときだけ画面をクリアして固定ラベルを再描画
   if (settingMode != lastSettingMode || isFirstRun != lastFirstRun) {
     lcd.clear();
@@ -252,27 +305,29 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
   }
 
   if (settingMode) {
+    char strBuf[40];
     // 設定確認モード
     lcd.setCursor(0, 0);
     lcd.print(F("--- SETTING MODE ---"));
-    lcd.setCursor(19, 0);
-    lcd.print(isTriggered ? F("^") : F("_"));
+
+    snprintf(strBuf, sizeof(strBuf), "SENSOR TH: %4.0f ms  ", sensingThreshMs);
+    lcd.setCursor(0, 1);
+    lcd.print(strBuf);
+
+    snprintf(strBuf, sizeof(strBuf), "DEAD TIME: %4.1f s ", deadTimeSec);
+    lcd.setCursor(0, 2);
+    lcd.print(strBuf);
+
+    snprintf(strBuf, sizeof(strBuf), "SENSOR   : %s  ", (digitalRead(PHOTO_PIN) == HIGH ? F("BLOCK") : F("CLEAR")));
+    lcd.setCursor(0, 3);
+    lcd.print(strBuf);
+
+    lcd.setCursor(18, 1);
+    lcd.print(isTriggered ? F("OK") : F("__"));
+    lcd.setCursor(18, 2);
+    lcd.print(loraInitialized ? F("L+") : F("L-"));
     lcd.setCursor(18, 3);
     lcd.print(deviceConnected ? F("B+") : F("B-"));
-
-    lcd.setCursor(0, 1);
-    lcd.print(F("SENSOR TH: "));
-    lcd.print(sensingThreshMs, 1);
-    lcd.print(F(" ms  "));
-
-    lcd.setCursor(0, 2);
-    lcd.print(F("DEAD TIME: "));
-    lcd.print(deadTimeSec, 2);
-    lcd.print(F(" s  "));
-
-    lcd.setCursor(0, 3);
-    lcd.print(F("SENSOR   : "));
-    lcd.print(digitalRead(PHOTO_PIN) == HIGH ? F("BLOCK") : F("CLEAR"));
 
   } else if (isFirstRun) {
     lcd.setCursor(0, 0);
@@ -304,8 +359,10 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(7, 3);
     lcd.print(timeBuf);
 
-    lcd.setCursor(19, 0);
-    lcd.print(isTriggered ? F("^") : F("_"));
+    lcd.setCursor(18, 1);
+    lcd.print(isTriggered ? F("OK") : F("__"));
+    lcd.setCursor(18, 2);
+    lcd.print(loraInitialized ? F("L+") : F("L-"));
     lcd.setCursor(18, 3);
     lcd.print(deviceConnected ? F("B+") : F("B-"));
   }
@@ -340,10 +397,103 @@ void BLESetup() {
 }
 
 // ============================================================
+// LoRa初期化（★追加）
+// .iniファイルを使わずライブラリ標準のデフォルト設定値
+// （SetDefaultConfigValue）をそのまま書き込む。
+//
+// ★ .cppの実装を確認した結果、InitLoRaModule()の内部で
+//   SwitchToConfigurationMode() と SerialLoRa.begin() が
+//   自動的に実行されることが分かったため、ここでは呼び出さない
+//   （二重初期化を避けるため）。
+// ★ InitLoRaModule()実行後もコンフィグモード(M0=1,M1=1)のまま
+//   なので、送信可能にするため明示的に SwitchToNormalMode() を呼ぶ。
+// ============================================================
+void LoRaSetupE220() {
+  Serial.println(F("[LoRa] Initializing E220-900T22S/L(JP) [Ver.1.x Compatible Mode]..."));
+  Serial.printf("[LoRa] Pins: M0=%d M1=%d RXD=%d TXD=%d AUX=%d  Baud=%d\n",
+                LoRa_ModeSettingPin_M0, LoRa_ModeSettingPin_M1, LoRa_RxPin, LoRa_TxPin,
+                LoRa_AUXPin, LoRa_BaudRate);
+
+  // ★ .iniファイルは使わず、ライブラリ内蔵のデフォルト設定値をそのまま使用
+  lora.SetDefaultConfigValue(lora.config);
+
+  //lora.SwitchToConfigurationMode();
+  //delay(500);  // ★ 20ms→500msに伸ばして安定待ちを確保
+
+  // 必要であればここでデフォルト値の一部だけ上書きできます（例）。
+  // ビットエンコード値は利用ガイド記載の default_config 定義／データシートに準拠してください。
+  // lora.config.own_channel = 0x00;
+  // lora.config.target_channel = 0x00;
+
+  // InitLoRaModule()内部でコンフィグモードへの移行とUART初期化が行われ、
+  // 上記configの内容がモジュールのレジスタ00H～07Hへ書き込まれる
+  if (lora.InitLoRaModule(lora.config)) {
+    // レジスタ書き込みコマンドに対するモジュールからの応答が
+    // 期待バイト数と一致しない場合に失敗となる（配線不良・電源不足等）
+    Serial.println(F("[LoRa] InitLoRaModule() FAILED. Check wiring / module power supply."));
+    loraInitialized = false;
+    return;
+  }
+
+  // 設定完了後もコンフィグモードのままなので、送受信可能な
+  // ノーマルモード(M0=0,M1=0)へ明示的に戻す
+  lora.SwitchToNormalMode();
+
+  loraInitialized = true;
+  Serial.printf(
+      "[LoRa] Init OK.  own_address=0x%04X  own_channel=%d  target_address=0x%04X  target_channel=%d\n",
+      lora.config.own_address, lora.config.own_channel, lora.config.target_address, lora.config.target_channel);
+}
+
+// ============================================================
+// LoRaパケット送信（★追加）
+// BLE Notifyと同一のペイロード文字列を渡して送信する。
+// 動作確認用に送信結果・所要時間を詳細にシリアル出力する。
+//
+// ★ 注意：SendFrame()はsubpacket_sizeを超えるデータ長の場合のみ1を返し、
+//   それ以外（UART送信自体の成否は未検知）は常に0を返す実装になっている。
+//   そのため下記の「OK/FAIL」は主に「送信データ長エラーの有無」を
+//   示すものであり、電波としての送信成功を保証するものではない。
+// ★ また、ライブラリ内部の送信前ビジーチェック（AUXピン監視）が
+//   実質的に機能していないため、極端に短い間隔で連続送信すると
+//   モジュール側の処理が追いつかない可能性がある
+//   （本ダミースケッチの送信間隔は5～70秒なので通常は問題にならない）。
+// ============================================================
+void sendLoRaPacket(const char* payload) {
+  if (!loraInitialized) {
+    Serial.println(F("[LoRa][TX] Skipped: LoRa module not initialized."));
+    return;
+  }
+
+  size_t payloadLen = strlen(payload);
+  unsigned long txStartMs = millis();
+
+  int result = lora.SendFrame(lora.config, (uint8_t*)payload, payloadLen);
+
+  unsigned long txDurationMs = millis() - txStartMs;
+
+  if (result == 0) {
+    loraTxCount++;
+    Serial.printf("[LoRa][TX] OK   payload=\"%s\" (%u bytes)  duration=%lums  total_ok=%lu\n",
+                  payload, (unsigned)payloadLen, txDurationMs, loraTxCount);
+  } else {
+    loraTxFailCount++;
+    Serial.printf("[LoRa][TX] FAIL SendFrame()=%d (payload too long for subpacket_size)  payload=\"%s\"  duration=%lums  total_fail=%lu\n",
+                  result, payload, txDurationMs, loraTxFailCount);
+  }
+}
+
+// ============================================================
 // Setup
 // ============================================================
 void setup() {
   Serial.begin(115200);
+  delay(1000);
+  // 起動時に前回の終了理由を出力
+  Serial.println(F("\n================================="));
+  Serial.print(F("[SYS] Last Reset Reason: "));
+  Serial.println(getResetReasonString());
+  Serial.println(F("=================================\n"));
 
   pinMode(TH_VR_PIN, INPUT);
   pinMode(ST_VR_PIN, INPUT);
@@ -353,23 +503,36 @@ void setup() {
   pinMode(SETTING_PIN, INPUT_PULLUP);
   digitalWrite(LED_PIN, LOW);
 
-  // センサを通過したらブザーは鳴らす
-  //tone(BUZZER_PIN, NOTE_FREQ); // 時間指定なしで音を出す
-
   // 割り込み設定（FALLINGエッジで遮光検出）
   attachInterrupt(digitalPinToInterrupt(PHOTO_PIN), handleSensorInterrupt, RISING);
 
   // LCD初期化
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setTimeOut(100);
+  Wire.setClock(100000); // 10kHz（標準モード）に明示的に落とす（デフォルトは400kHzの場合あり）
+  Wire.setTimeOut(100);  // タイムアウト設定
+
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print(F("--- RC LAP TIMER ---"));
   lcd.setCursor(0, 1);
   lcd.print(F("Initialize..."));
+  lcd.setCursor(0, 3);
+  lcd.print(getResetReasonString());
+  delay(1000); //電力降下を防止するためにウエイト
 
+  // BLS初期化
   BLESetup();
+  delay(1000); //電力降下を防止するためにウエイト
+
+  int countLoRa = 0;
+  while (countLoRa < 5) {
+    LoRaSetupE220();
+    delay(1000); //電力降下を防止するためにウエイト
+    if (loraInitialized) break;
+    ++countLoRa;
+  }
+
   flashLEDBlocking(SETUP_FLASH_COUNT);
   lcd.clear();
 
@@ -439,6 +602,10 @@ void loop() {
     if (digitalRead(PHOTO_PIN) == LOW) {
       // 遮光時間内に光が復帰 → ノイズとしてキャンセル
       isSensing = false;
+      // シリアルログ（デバッグ用）
+      int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
+      Serial.printf("Noise Signal (sensingThreshMs %.0f us) (elapsedUs %lu us)\n", sensingThreshMs * 1000.0f, elapsedUs);
+
     } else {
       int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
       if (elapsedUs >= (int64_t)(sensingThreshMs * 1000.0f)) {
@@ -455,19 +622,20 @@ void loop() {
             if (currentLapMs < bestTimeMs) bestTimeMs = currentLapMs;
 
             // BLE送信（秒単位のfloatに変換して送信）
+            char bleBuf[32];
+            float lapSec = currentLapMs / 1000.0f;
+            snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
             if (deviceConnected) {
-              char bleBuf[32];
-              float lapSec = currentLapMs / 1000.0f;
-              snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
               pCharacteristic->setValue(bleBuf);
               pCharacteristic->notify();
             }
+            sendLoRaPacket(bleBuf);  // ★ BLEと同一ペイロードをLoRaでも送信
 
             triggerFlashLED(1);
             lastLapTimeUs = nowUs;
 
             // シリアルログ（デバッグ用）
-            Serial.printf("Lap: %lu ms (Best: %lu ms)\n", currentLapMs, bestTimeMs);
+            Serial.printf("Lap: %lu ms (Best: %lu ms) (elapsedUs %lu us )\n", currentLapMs, bestTimeMs, elapsedUs);
 
           } else {
             // 初回通過（計測開始）
@@ -476,6 +644,16 @@ void loop() {
             lastLapTimeUs = nowUs;
             triggerFlashLED(1);
             Serial.println(F("Measurement Started"));
+
+            // BLE送信（秒単位のfloatに変換して送信）初回通過はLap:0.00として送信
+            char bleBuf[32];
+            float lapSec = 0.0f;
+            snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
+            if (deviceConnected) {
+              pCharacteristic->setValue(bleBuf);
+              pCharacteristic->notify();
+            }
+            sendLoRaPacket(bleBuf);  // ★ BLEと同一ペイロードをLoRaでも送信
           }
 
           // センサを通過したらブザーは鳴らす
