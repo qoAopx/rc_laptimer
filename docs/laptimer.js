@@ -427,7 +427,7 @@ function updateStats() {
   const lapCountElem = document.getElementById("lap-count");
   // const avgTimeElem = document.getElementById("avg-time");
 
-  const displayLaps = Math.max(0, dataCount - 1);
+  const displayLaps = Math.max(0, dataCount);
   if (lapCountElem) lapCountElem.innerText = displayLaps;
 
   /*
