@@ -335,9 +335,9 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
     lcd.setCursor(0, 1);
     lcd.print(F("   LAP TIMER READY  "));
     lcd.setCursor(0, 2);
-    lcd.print(F("    PASS SENSOR     "));
+    lcd.print(F("PASS SENSOR TO START"));
     lcd.setCursor(0, 3);
-    lcd.print(F("      TO START      "));
+    lcd.print(getResetReasonString());
 
   } else {
     // 計測中：現在の経過時間をリアルタイム表示
