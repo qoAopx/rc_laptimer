@@ -538,13 +538,13 @@ function clearData() {
     }
     lapStartTime = null;
 
-    document.getElementById("best-time").innerText = "--:--.--";
+    // document.getElementById("best-time").innerText = "--:--.--";
     document.getElementById("current-time").innerText = "00:00.00";
 
     const lapCountElem = document.getElementById("lap-count");
-    const avgTimeElem = document.getElementById("avg-time");
+    // const avgTimeElem = document.getElementById("avg-time");
     if (lapCountElem) lapCountElem.innerText = "0";
-    if (avgTimeElem) avgTimeElem.innerText = "--:--.--";
+    // if (avgTimeElem) avgTimeElem.innerText = "--:--.--";
 
     document.getElementById("lap-list").innerHTML = "";
     document.getElementById("photo-history").innerHTML = "";
