@@ -405,7 +405,7 @@ function addLap(time, receiveTime) {
     // ★ 2周目以降：ラップ確定
     if (time < bestLap) {
       bestLap = time;
-      document.getElementById("best-time").innerText = formatTime(bestLap);
+      // document.getElementById("best-time").innerText = formatTime(bestLap);
     }
     // ★ 「〇〇周、〇〇点〇〇秒」を読み上げ（表示上のラップ数と同じ lapTimes.length - 1 を使用）
     const lapNo = lapTimes.length - 1;
@@ -425,11 +425,12 @@ function addLap(time, receiveTime) {
 function updateStats() {
   const dataCount = lapTimes.length;
   const lapCountElem = document.getElementById("lap-count");
-  const avgTimeElem = document.getElementById("avg-time");
+  // const avgTimeElem = document.getElementById("avg-time");
 
   const displayLaps = Math.max(0, dataCount - 1);
   if (lapCountElem) lapCountElem.innerText = displayLaps;
 
+  /*
   if (avgTimeElem) {
     if (dataCount > 1) {
       const lapsToAverage = lapTimes.slice(0, -1);
@@ -440,6 +441,7 @@ function updateStats() {
       avgTimeElem.innerText = "--:--.--";
     }
   }
+  */
 }
 
 /**
@@ -451,11 +453,15 @@ function updateTable() {
   lapTimes.forEach((time, index) => {
     if (lapTimes.length - index - 1 != 0) {
       const row = tbody.insertRow();
+      var timeText = formatTime(time);
       if (time === bestLap) {
         row.style = "background-color:#28a745;";
+        timeText = timeText + ' best!';
       }
+
       row.insertCell(0).innerText = lapTimes.length - index - 1;
-      row.insertCell(1).innerText = formatTime(time);
+      // row.insertCell(1).innerText = formatTime(time);
+      row.insertCell(1).innerText = timeText;
     }
   });
 }
@@ -466,14 +472,9 @@ function updateTable() {
  * @returns {string} フォーマット済みの時間文字列 (例: "01:23.45")
  */
 function formatTime(sec) {
-  // 秒数(sec)を一旦ミリ秒(整数)に変換し、四捨五入して誤差を排除する
-  const totalMs = Math.round(sec * 1000);
-  // Arduino側と同じ「+ 5ms 繰り上がり補正」を行った後に整数計算
-  const roundedMs = totalMs + 5;
-  const m = Math.floor(roundedMs / 60000);
-  const s = Math.floor((roundedMs % 60000) / 1000);
-  const cs = Math.floor((roundedMs % 1000) / 10);
-
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  const cs = Math.floor((sec * 100) % 100);
   return `${m.toString().padStart(2, "0")}:${s
     .toString()
     .padStart(2, "0")}.${cs.toString().padStart(2, "0")}`;
