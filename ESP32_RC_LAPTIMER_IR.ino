@@ -2,17 +2,6 @@
  * ==============================================================================
  * RC Car Lap Timer (Photoelectric Sensor & Variable Deadtime)
  * [Revised Version]
- *
- * 主な修正点:
- *  - ISR内のmillis()をesp_timer_get_time()に変更（μs精度・安全）
- *  - volatile変数の読み取りを最初からnoInterrupts()で保護（データ競合解消）
- *  - ラップタイムをfloatでなくunsigned long(ms)で保持（精度損失防止）
- *  - デッドタイム最小値を設けてdead=0ms時のバグを修正
- *  - マジックナンバーを定数化
- *  - BLEコールバックをstaticインスタンスに変更（メモリリーク防止）
- *  - SETTING_PINにデバウンス処理を追加（LCD chatter防止）
- *  - formatTime()をsnprintfに変更しバッファサイズを明示
- *  - 時刻ソースをすべてμs(int64_t)に統一し、ms変換はその都度実施
  * ==============================================================================
  * #define LoRa_ModeSettingPin_M0 4
  * #define LoRa_ModeSettingPin_M1 13
@@ -89,8 +78,12 @@ float sensingThreshMs = 0.0f;
 float deadTimeSec = 0.0f;
 unsigned long deadTimeMs = MIN_DEAD_TIME_MS;
 
-// ISRとmainループ間の共有変数（volatile）
-// ★時刻はすべてesp_timer_get_time()のμs(int64_t)で統一
+// ============================================================
+// ★ISRとmainループ間の共有変数
+// portMUX_TYPEによるクリティカルセクションで保護する
+// （ESP32はデュアルコアのため、noInterrupts()では他コアのISRを止められない）
+// ============================================================
+portMUX_TYPE sensorMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool isSensorTriggered = false;
 volatile int64_t isrTriggerTimeUs = 0;  // μs単位（esp_timer_get_time()）
 
@@ -166,15 +159,14 @@ static MyServerCallbacks bleCallbacks;  // スタティックインスタンス
 
 // ============================================================
 // 光電センサ ISR
-// ★ millis()はISR内で使用禁止 → esp_timer_get_time()を使用
-// ★ isSensingはISR外で書き換えるのでvolatile不要だが、
-//    isTriggeredはISR内で参照するためvolatileが必須
+// 状態判定はループ側に委ね、ISR内では「発火した事実と時刻」だけを記録する
+// （ISRを可能な限り軽く保つ）
 // ============================================================
 void IRAM_ATTR handleSensorInterrupt() {
-  if (!isSensing && isTriggered) {
-    isSensorTriggered = true;
-    isrTriggerTimeUs = esp_timer_get_time();  // μs精度・ISR安全
-  }
+  portENTER_CRITICAL_ISR(&sensorMux);
+  isSensorTriggered = true;
+  isrTriggerTimeUs = esp_timer_get_time();  // μs精度・ISR安全
+  portEXIT_CRITICAL_ISR(&sensorMux);
 }
 
 // ============================================================
@@ -226,9 +218,9 @@ void updateLED() {
 // ============================================================
 void formatTime(unsigned long time_ms, char* outBuf, size_t bufSize) {
   const unsigned long MAX_TIME_MS = 59UL * 60UL * 1000UL;  // ★ 59分59.99秒以上は異常値扱い
-  // 0または異常値は "00:00.00" で表示
+  // 0または異常値は "--:--.--" で表示
   if (time_ms == 0 || time_ms >= MAX_TIME_MS) {
-    snprintf(outBuf, bufSize, "00:00.00   ");
+    snprintf(outBuf, bufSize, "--:--.--   ");
     return;
   }
   // BLE送信と同じロジックで一度Floatにしてから整数に戻す。
@@ -276,7 +268,7 @@ void updateLCD(unsigned long lapMs, unsigned long bestMs) {
 
   // --- 一定時間ごとにLCDを強制リセットして復旧させる処理 ---
   static unsigned long lastLcdRecoveryMs = 0;
-  if (millis() - lastLcdRecoveryMs >= 3*60*1000) { // 10秒周期
+  if (millis() - lastLcdRecoveryMs >= 3*60*1000) { // 3分周期
     lastLcdRecoveryMs = millis();
     lcd.init();      // LCD内部の制御ICを強制初期化（これで固まりが解けます）
     lcd.backlight(); // バックライトを再点灯
@@ -576,19 +568,20 @@ void loop() {
   }
 
   // ----------------------------------------------------------
-  // 3. ISRトリガーの排他的読み取り
-  // ★ 最初からnoInterrupts()で囲んでデータ競合を完全解消
+  // 3. ★ISRトリガーの排他的読み取り（クリティカルセクションで保護）
+  // portENTER_CRITICAL/portEXIT_CRITICALはESP32のデュアルコア構成に対応したISR内の処理は最小限に留め、
+  // 状態判定はここで行う。
   // ----------------------------------------------------------
   bool triggered = false;
   int64_t triggerUs = 0;
 
-  noInterrupts();
+  portENTER_CRITICAL(&sensorMux);
   if (isSensorTriggered) {
     triggered = true;
     isSensorTriggered = false;
     triggerUs = isrTriggerTimeUs;
   }
-  interrupts();
+  portEXIT_CRITICAL(&sensorMux);
 
   if (triggered) {
     sensorTriggerUs = triggerUs;
@@ -604,8 +597,7 @@ void loop() {
       isSensing = false;
       // シリアルログ（デバッグ用）
       int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
-      Serial.printf("Noise Signal (sensingThreshMs %.0f us) (elapsedUs %lu us)\n", sensingThreshMs * 1000.0f, elapsedUs);
-
+      Serial.printf("Noise Signal (sensingThreshMs: %.0f us) > (elapsedUs: %lu us)\n", sensingThreshMs * 1000.0f, elapsedUs);
     } else {
       int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
       if (elapsedUs >= (int64_t)(sensingThreshMs * 1000.0f)) {
@@ -643,7 +635,7 @@ void loop() {
             isTriggered = false;
             lastLapTimeUs = nowUs;
             triggerFlashLED(1);
-            Serial.println(F("Measurement Started"));
+            Serial.printf("Measurement Started (elapsedUs: %lu us)\n",elapsedUs);
 
             // BLE送信（秒単位のfloatに変換して送信）初回通過はLap:0.00として送信
             char bleBuf[32];
