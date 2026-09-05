@@ -63,7 +63,7 @@ const int SETUP_FLASH_COUNT = 2;                   // 起動時LEDフラッシ�
 const int SWITCH_DEBOUNCE_MS = 50;                 // スライドスイッチデバウンス時間
 const unsigned long BEST_TIME_INIT_MS = 99999000UL;  // ベストタイム初期値(ms)
 const int NOTE_FREQ = 4000;                         // ブザー音の高さ（Hz）：4000Hz
-const unsigned long TONE_DURATION = 100;            // ブザー鳴らす時間（ミリ秒）
+const unsigned long TONE_DURATION = 50;            // ブザー鳴らす時間（ミリ秒）
 
 // --- グローバル変数 ---
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -84,11 +84,14 @@ unsigned long deadTimeMs = MIN_DEAD_TIME_MS;
 // （ESP32はデュアルコアのため、noInterrupts()では他コアのISRを止められない）
 // ============================================================
 portMUX_TYPE sensorMux = portMUX_INITIALIZER_UNLOCKED;
-volatile bool isSensorTriggered = false;
-volatile int64_t isrTriggerTimeUs = 0;  // μs単位（esp_timer_get_time()）
+volatile bool sensorEventPending = false;
+volatile bool sensorValidationActive = false;
+volatile bool sensorEventEnded = false;
+volatile int64_t sensorEventTimeUs = 0;  // μs単位（esp_timer_get_time()）
+volatile int64_t sensorEventEndUs = 0;
 
-volatile bool isSensing = false;  // ISRが発火してからセンサー確定待ち中フラグ
-volatile int64_t sensorTriggerUs = 0;      // 確定したトリガー時刻(μs)
+bool isSensing = false;              // ISRが発火してからセンサー確定待ち中フラグ
+int64_t sensorTriggerUs = 0;          // 確定したトリガー時刻(μs)
 
 // ラップタイム管理（ms単位で保持して精度損失を防ぐ）
 int64_t lastLapTimeUs = 0;  // lastLapTimeをμs単位で保持
@@ -96,7 +99,7 @@ unsigned long currentLapMs = 0;
 unsigned long bestTimeMs = (unsigned long)BEST_TIME_INIT_MS;
 unsigned long prevLapMs = 0;
 bool isFirstRun = true;
-volatile bool isTriggered = true;  // 起動時はReady(true)
+volatile bool isTriggered = true;  // 起動時はReady(true)。ISRと共有するためvolatile
 
 // --- 非ブロッキングLED制御 ---
 int ledFlashCount = 0;
@@ -159,14 +162,41 @@ static MyServerCallbacks bleCallbacks;  // スタティックインスタンス
 
 // ============================================================
 // 光電センサ ISR
-// 状態判定はループ側に委ね、ISR内では「発火した事実と時刻」だけを記録する
+// 状態判定はループ側に委ね、ISR内では遮光開始／終了の時刻だけを記録する。
+// 両エッジの時刻差で遮光時間を判定するため、loop()の一時的な遅延にも影響されない。
 // （ISRを可能な限り軽く保つ）
 // ============================================================
 void IRAM_ATTR handleSensorInterrupt() {
+  const int64_t nowUs = esp_timer_get_time();
+  const bool isBlocked = (digitalRead(PHOTO_PIN) == HIGH);
   portENTER_CRITICAL_ISR(&sensorMux);
-  isSensorTriggered = true;
-  isrTriggerTimeUs = esp_timer_get_time();  // μs精度・ISR安全
+  if (isBlocked) {
+    // センサーがReadyで、まだ遮光を追跡していない場合だけ開始時刻を保存する。
+    if (isTriggered && !sensorValidationActive && !sensorEventPending) {
+      sensorEventPending = true;
+      sensorEventEnded = false;
+      sensorEventTimeUs = nowUs;
+    }
+  } else if (isTriggered && (sensorEventPending || sensorValidationActive) && !sensorEventEnded) {
+    // 検証待ち中の遮光終了。最初の立下り時刻を保持する。
+    sensorEventEnded = true;
+    sensorEventEndUs = nowUs;
+  }
   portEXIT_CRITICAL_ISR(&sensorMux);
+}
+
+// ISRが参照するセンサー状態の更新は、同じスピンロックで行う。
+void setSensorArmed(bool armed) {
+  portENTER_CRITICAL(&sensorMux);
+  isTriggered = armed;
+  portEXIT_CRITICAL(&sensorMux);
+}
+
+void finishSensorValidation(bool armed) {
+  portENTER_CRITICAL(&sensorMux);
+  sensorValidationActive = false;
+  isTriggered = armed;
+  portEXIT_CRITICAL(&sensorMux);
 }
 
 // ============================================================
@@ -475,6 +505,47 @@ void sendLoRaPacket(const char* payload) {
   }
 }
 
+// センサーの遮光時間が閾値を満たした時だけ呼ぶ。
+// BLE/LoRaのペイロード形式は既存クライアントとの互換性のため変更しない。
+void registerLap(int64_t nowUs, int64_t elapsedUs) {
+  if (!isFirstRun) {
+    prevLapMs = currentLapMs;
+    currentLapMs = (unsigned long)((nowUs - lastLapTimeUs) / 1000LL);
+    if (currentLapMs < bestTimeMs) bestTimeMs = currentLapMs;
+
+    char bleBuf[32];
+    float lapSec = currentLapMs / 1000.0f;
+    snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
+    if (deviceConnected) {
+      pCharacteristic->setValue(bleBuf);
+      pCharacteristic->notify();
+    }
+    sendLoRaPacket(bleBuf);
+
+    triggerFlashLED(1);
+    lastLapTimeUs = nowUs;
+    Serial.printf("Lap: %lu ms (Best: %lu ms) (elapsedUs %lu us )\n", currentLapMs, bestTimeMs, elapsedUs);
+  } else {
+    isFirstRun = false;
+    lastLapTimeUs = nowUs;
+    triggerFlashLED(1);
+    Serial.printf("Measurement Started (elapsedUs: %lu us)\n", elapsedUs);
+
+    char bleBuf[32];
+    float lapSec = 0.0f;
+    snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
+    if (deviceConnected) {
+      pCharacteristic->setValue(bleBuf);
+      pCharacteristic->notify();
+    }
+    sendLoRaPacket(bleBuf);
+  }
+
+  tone(BUZZER_PIN, NOTE_FREQ);
+  buzzerStartTime = esp_timer_get_time();
+  isBuzzerRinging = true;
+}
+
 // ============================================================
 // Setup
 // ============================================================
@@ -495,12 +566,14 @@ void setup() {
   pinMode(SETTING_PIN, INPUT_PULLUP);
   digitalWrite(LED_PIN, LOW);
 
-  // 割り込み設定（FALLINGエッジで遮光検出）
-  attachInterrupt(digitalPinToInterrupt(PHOTO_PIN), handleSensorInterrupt, RISING);
+  // ADCの分解能と入力レンジを明示し、ボリューム設定の再現性を確保する。
+  analogReadResolution(12);
+  analogSetPinAttenuation(TH_VR_PIN, ADC_11db);
+  analogSetPinAttenuation(ST_VR_PIN, ADC_11db);
 
   // LCD初期化
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(100000); // 10kHz（標準モード）に明示的に落とす（デフォルトは400kHzの場合あり）
+  Wire.setClock(100000); // 100kHz（標準モード）に明示的に設定（デフォルトは400kHzの場合あり）
   Wire.setTimeOut(100);  // タイムアウト設定
 
   lcd.init();
@@ -528,9 +601,12 @@ void setup() {
   flashLEDBlocking(SETUP_FLASH_COUNT);
   lcd.clear();
 
-  // 初期状態：Ready（ラップ可能）
-  isTriggered = true;
+  // 初期状態：Ready（ラップ可能）。初期化中のノイズを記録しないよう、
+  // 割り込みはすべての周辺機器初期化後に有効化する。
+  setSensorArmed(true);
   lastLapTimeUs = esp_timer_get_time();  // μsで記録
+  // 遮光開始／終了の時刻差を測るため、両エッジを捕捉する。
+  attachInterrupt(digitalPinToInterrupt(PHOTO_PIN), handleSensorInterrupt, CHANGE);
 
   Serial.println(F("\n--- SYSTEM READY ---"));
 }
@@ -568,92 +644,61 @@ void loop() {
   }
 
   // ----------------------------------------------------------
-  // 3. ★ISRトリガーの排他的読み取り（クリティカルセクションで保護）
-  // portENTER_CRITICAL/portEXIT_CRITICALはESP32のデュアルコア構成に対応したISR内の処理は最小限に留め、
-  // 状態判定はここで行う。
+  // 3. ISRで保存した遮光開始時刻を排他的に読み取る
   // ----------------------------------------------------------
   bool triggered = false;
+  bool ended = false;
   int64_t triggerUs = 0;
+  int64_t endUs = 0;
 
   portENTER_CRITICAL(&sensorMux);
-  if (isSensorTriggered) {
+  if (sensorEventPending) {
     triggered = true;
-    isSensorTriggered = false;
-    triggerUs = isrTriggerTimeUs;
+    sensorEventPending = false;
+    sensorValidationActive = true;
+    triggerUs = sensorEventTimeUs;
+    ended = sensorEventEnded;
+    endUs = sensorEventEndUs;
+    sensorEventEnded = false;
   }
   portEXIT_CRITICAL(&sensorMux);
 
   if (triggered) {
     sensorTriggerUs = triggerUs;
-    isSensing = true;  // 連続遮光時間の計測モード開始
+    isSensing = true;
   }
 
   // ----------------------------------------------------------
-  // 4. 反応時間の検証（isSensingフェーズ）
+  // 4. 反応時間の検証（開始／終了のISR時刻差で判定）
   // ----------------------------------------------------------
   if (isSensing) {
-    if (digitalRead(PHOTO_PIN) == LOW) {
-      // 遮光時間内に光が復帰 → ノイズとしてキャンセル
-      isSensing = false;
-      // シリアルログ（デバッグ用）
-      int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
-      Serial.printf("Noise Signal (sensingThreshMs: %.0f us) > (elapsedUs: %lu us)\n", sensingThreshMs * 1000.0f, elapsedUs);
-    } else {
-      int64_t elapsedUs = esp_timer_get_time() - sensorTriggerUs;
-      if (elapsedUs >= (int64_t)(sensingThreshMs * 1000.0f)) {
-        // 規定時間以上の遮光 → ラップ確定
-        isSensing = false;
-
-        if (isTriggered) {
-          int64_t nowUs = sensorTriggerUs;  // 割り込み発生時刻を使用
-
-          if (!isFirstRun) {
-            isTriggered = false;  // デッドタイム開始
-            prevLapMs = currentLapMs;
-            currentLapMs = (unsigned long)((nowUs - lastLapTimeUs) / 1000LL);
-            if (currentLapMs < bestTimeMs) bestTimeMs = currentLapMs;
-
-            // BLE送信（秒単位のfloatに変換して送信）
-            char bleBuf[32];
-            float lapSec = currentLapMs / 1000.0f;
-            snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
-            if (deviceConnected) {
-              pCharacteristic->setValue(bleBuf);
-              pCharacteristic->notify();
-            }
-            sendLoRaPacket(bleBuf);  // ★ BLEと同一ペイロードをLoRaでも送信
-
-            triggerFlashLED(1);
-            lastLapTimeUs = nowUs;
-
-            // シリアルログ（デバッグ用）
-            Serial.printf("Lap: %lu ms (Best: %lu ms) (elapsedUs %lu us )\n", currentLapMs, bestTimeMs, elapsedUs);
-
-          } else {
-            // 初回通過（計測開始）
-            isFirstRun = false;
-            isTriggered = false;
-            lastLapTimeUs = nowUs;
-            triggerFlashLED(1);
-            Serial.printf("Measurement Started (elapsedUs: %lu us)\n",elapsedUs);
-
-            // BLE送信（秒単位のfloatに変換して送信）初回通過はLap:0.00として送信
-            char bleBuf[32];
-            float lapSec = 0.0f;
-            snprintf(bleBuf, sizeof(bleBuf), "Lap:%6.2f", lapSec);
-            if (deviceConnected) {
-              pCharacteristic->setValue(bleBuf);
-              pCharacteristic->notify();
-            }
-            sendLoRaPacket(bleBuf);  // ★ BLEと同一ペイロードをLoRaでも送信
-          }
-
-          // センサを通過したらブザーは鳴らす
-          tone(BUZZER_PIN, NOTE_FREQ); // 時間指定なしで音を出す
-          buzzerStartTime = esp_timer_get_time(); // 鳴らし始めた時刻を記録
-          isBuzzerRinging = true;         // ブザー鳴動中フラグをON
-        }
+    if (!ended) {
+      portENTER_CRITICAL(&sensorMux);
+      if (sensorEventEnded) {
+        ended = true;
+        endUs = sensorEventEndUs;
+        sensorEventEnded = false;
       }
+      portEXIT_CRITICAL(&sensorMux);
+    }
+
+    const int64_t elapsedUs = ended ? (endUs - sensorTriggerUs)
+                                    : (esp_timer_get_time() - sensorTriggerUs);
+    const int64_t sensingThresholdUs = (int64_t)(sensingThreshMs * 1000.0f);
+
+    if (ended && elapsedUs < sensingThresholdUs) {
+      // 閾値に達する前に遮光が終了 → ノイズとしてキャンセル
+      isSensing = false;
+      finishSensorValidation(true);
+      Serial.printf("Noise Signal (sensingThreshMs: %.0f us) > (elapsedUs: %lld us)\n",
+                    sensingThreshMs * 1000.0f, elapsedUs);
+    } else if (elapsedUs >= sensingThresholdUs) {
+      // 規定時間以上の遮光 → ラップ確定
+      isSensing = false;
+      // 検証終了とデッドタイム開始を同時に反映し、次のISRが
+      // 有効な状態を一瞬だけ観測する競合を防ぐ。
+      finishSensorValidation(false);
+      registerLap(sensorTriggerUs, elapsedUs);
     }
   }
 
@@ -664,7 +709,7 @@ void loop() {
     unsigned long elapsedSinceLapMs = (unsigned long)((esp_timer_get_time() - lastLapTimeUs) / 1000LL);
 
     if (elapsedSinceLapMs >= deadTimeMs) {
-      isTriggered = true;
+      setSensorArmed(true);
       triggerFlashLED(1);
     }
   }
